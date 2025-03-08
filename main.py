@@ -5,6 +5,10 @@
 # Author: Geng Jiale
 # Time: 2024/07/11
 # Function: using Approximate Dynamic Programming (ADP) to train control policy, value function
+# 
+# Modified by Cheng JunJie
+# Time: 2025/03
+# Function: ADP to train diffusion policy, value function
 # ================================================================
 
 import os
@@ -38,7 +42,7 @@ def built_parser():
     parser.add_argument('--lr_v', default=8e-4, help='learning rate of value network')
 
     """trajectory"""
-    parser.add_argument('--shape', default='sin', help='sin, cos, line, traj, dlc or dlc2')
+    parser.add_argument('--shape', default='dlc2', help='sin, cos, line, traj, dlc or dlc2')
     parser.add_argument('--a', default=0.2, help='amplifier of the sin curve')
     parser.add_argument('--k', default=1.25*np.pi, help='frequency of the sin curve')
     parser.add_argument('--y_lim', default=5, help='limitation of y when training')
@@ -48,7 +52,7 @@ def built_parser():
     parser.add_argument('--target_v', default=0.2, help='default velocity of longitudinal')
     """mode"""
     parser.add_argument('--max_iteration_out', default=10000, help='maximum iteration of training (outer loop)')
-    parser.add_argument('--code_mode', default='train', help='train or evaluate')
+    parser.add_argument('--code_mode', default='evaluate', help='train or evaluate')
     parser.add_argument('--evaluate_iteration', default=10000, help='which net to use when evaluate')
     parser.add_argument('--load_data', default=0, help='load pre-trained data for the buffer')
     parser.add_argument('--device', default='cuda:0', help='cuda:0 or cpu')
@@ -75,9 +79,9 @@ def main():
 
     dynamic = VehicleDynamics(args)
 
-    policy_log_dir = './data_without_value/policy_net/'
+    policy_log_dir = './weights/policy_net/'
     os.makedirs(policy_log_dir, exist_ok=True)  # 递归创建目录
-    value_log_dir = './data_without_value/value_net/'
+    value_log_dir = './weights/value_net/'
     os.makedirs(value_log_dir, exist_ok=True)
 
     if args.code_mode == 'train':
@@ -104,7 +108,7 @@ def main():
             # if t_iter_index % 100 == 0:
             #     policy.actor.save_parameters(policy_log_dir, t_iter_index)
             if t_iter_index % 1000 == 0:
-                    with open(os.path.join(policy_log_dir,f'DAC{t_iter_index}.pkl'),
+                    with open(os.path.join(policy_log_dir,f'{args.method_version}_DAC{t_iter_index}.pkl'),
                                 'wb') as f:
                         pickle.dump(policy, f)
                     value.save_parameters(value_log_dir, t_iter_index)
@@ -113,7 +117,7 @@ def main():
 
     elif args.code_mode == 'evaluate':
         '''tracking performance depend on the trajectory shape k_curve and longitudinal speed u'''
-        with open(os.path.join(policy_log_dir,f'DAC{args.evaluate_iteration}.pkl'),'rb') as f:
+        with open(os.path.join(policy_log_dir,f'{args.method_version}_DAC{args.evaluate_iteration}.pkl'),'rb') as f:
             policy = pickle.load(f)
         # policy.actor.load_parameters()
         policy.actor.to('cuda:0')
