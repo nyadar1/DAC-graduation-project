@@ -82,7 +82,7 @@ class Policy(nn.Module):
             log_dir <str>
             iteration <int, 1>
         '''
-        path = 'iter' + str(iteration) + '_policy_net.pth'
+        path = self.args.method_version+'_iter' + str(iteration) + '_policy_net.pth'
         torch.save(self.state_dict(), os.path.join(log_dir, path))
 
     def load_parameters(self, log_dir, iteration):
@@ -92,7 +92,7 @@ class Policy(nn.Module):
             log_dir <str>
             iteration <int, 1>
         '''
-        path = 'iter' + str(iteration) + '_policy_net.pth'
+        path = self.args.method_version+'_iter' + str(iteration) + '_policy_net.pth'
         self.load_state_dict(torch.load(os.path.join(log_dir, path)))
 
 class DiffusionPolicy(nn.Module):
@@ -176,7 +176,7 @@ class DiffusionPolicy(nn.Module):
             log_dir <str>
             iteration <int, 1>
         '''
-        path = 'iter' + str(iteration) + '_policy_net.pth'
+        path = self.args.method_version+'_iter' + str(iteration) + '_policy_net.pth'
         torch.save(self.state_dict(), os.path.join(log_dir, path))
 
     def load_parameters(self, log_dir, iteration):
@@ -186,7 +186,7 @@ class DiffusionPolicy(nn.Module):
             log_dir <str>
             iteration <int, 1>
         '''
-        path = 'iter' + str(iteration) + '_policy_net.pth'
+        path = self.args.method_version+'_iter' + str(iteration) + '_policy_net.pth'
         self.load_state_dict(torch.load(os.path.join(log_dir, path)))
 
     def _initialize_weights(self):
@@ -264,7 +264,7 @@ class Value(nn.Module):
             log_dir <str>
             iteration <int, 1>
         '''
-        path = 'iter' + str(iteration) + '_value_net.pth'
+        path = self.args.method_version+'_iter' + str(iteration) + '_value_net.pth'
         torch.save(self.state_dict(), os.path.join(log_dir, path))
 
     def load_parameters(self, log_dir, iteration):
@@ -274,7 +274,7 @@ class Value(nn.Module):
             log_dir <str>
             iteration <int, 1>
         '''
-        path = 'iter' + str(iteration) + '_value_net.pth'
+        path = self.args.method_version+'_iter' + str(iteration) + '_value_net.pth'
         self.load_state_dict(torch.load(os.path.join(log_dir, path)))
 
 

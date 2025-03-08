@@ -11,6 +11,7 @@ import os
 import torch
 import logging
 import argparse
+import pickle
 import numpy as np
 from Network import DAC, Value
 from Learner import Train
@@ -46,7 +47,6 @@ def built_parser():
     """velocity"""
     parser.add_argument('--target_v', default=0.2, help='default velocity of longitudinal')
     """mode"""
-    parser.add_argument('--max_iteration', default=1, help='maximum iteration of training (inner loop)')  # 20000
     parser.add_argument('--max_iteration_out', default=10000, help='maximum iteration of training (outer loop)')
     parser.add_argument('--code_mode', default='train', help='train or evaluate')
     parser.add_argument('--evaluate_iteration', default=10000, help='which net to use when evaluate')
@@ -90,30 +90,33 @@ def main():
 
         train.agent_batch = dynamic.initialize_state()
         for iter_index_out in range(args.max_iteration_out):
-            for iter_index in range(args.max_iteration):
-                logging.debug(iter_index)
+            train.state_update(policy, dynamic)
+            value_loss = train.value_update(policy, value, dynamic)
+            logging.debug(value_loss)
+            logging.debug('==============================')
 
-                train.state_update(policy, dynamic)
+            policy_loss = train.policy_update(policy, value, iter_index_out)
+            logging.debug(policy_loss)
 
-                value_loss = train.value_update(policy, value, dynamic)
-                logging.debug(value_loss)
-                logging.debug('==============================')
-
-                policy_loss = train.policy_update(policy, value, iter_index_out)
-                logging.debug(policy_loss)
-
-                t_iter_index = iter_index_out + 1
-                if t_iter_index % 100 == 0:
-                    print('iteration:{:3d} | policy loss:{:.4f} | value loss:{:.4f} '.format(t_iter_index, float(policy_loss), float(value_loss)))
-                if t_iter_index % 100 == 0:
+            t_iter_index = iter_index_out + 1
+            if t_iter_index % 100 == 0:
+                print('iteration:{:3d} | policy loss:{:.4f} | value loss:{:.4f} '.format(t_iter_index, float(policy_loss), float(value_loss)))
+            # if t_iter_index % 100 == 0:
+            #     policy.actor.save_parameters(policy_log_dir, t_iter_index)
+            if t_iter_index % 1000 == 0:
+                    with open(os.path.join(policy_log_dir,f'DAC{t_iter_index}.pkl'),
+                                'wb') as f:
+                        pickle.dump(policy, f)
                     value.save_parameters(value_log_dir, t_iter_index)
-                    policy.actor.save_parameters(policy_log_dir, t_iter_index)
 
         train.plot_figure()
 
     elif args.code_mode == 'evaluate':
         '''tracking performance depend on the trajectory shape k_curve and longitudinal speed u'''
-        policy.actor.load_parameters(policy_log_dir, args.evaluate_iteration)
+        with open(os.path.join(policy_log_dir,f'DAC{args.evaluate_iteration}.pkl'),'rb') as f:
+            policy = pickle.load(f)
+        # policy.actor.load_parameters()
+        policy.actor.to('cuda:0')
         evaluation(args, policy, dynamic)
 
 
