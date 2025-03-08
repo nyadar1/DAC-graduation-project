@@ -27,6 +27,7 @@ def built_parser():
     parser.add_argument('--action_dim', default=2, help='dimension of action')
     parser.add_argument('--dynamic_dim', default=6, help='dimension of vehicle dynamic')
 
+    parser.add_argument('--method_version', default='2', help='method_version')
     """training"""
     parser.add_argument('--buffer_size', default=5000)
     parser.add_argument('--batch_size', default=256)
@@ -36,7 +37,7 @@ def built_parser():
     parser.add_argument('--lr_v', default=8e-4, help='learning rate of value network')
 
     """trajectory"""
-    parser.add_argument('--shape', default='dlc2', help='sin, cos, line, traj, dlc or dlc2')
+    parser.add_argument('--shape', default='sin', help='sin, cos, line, traj, dlc or dlc2')
     parser.add_argument('--a', default=0.2, help='amplifier of the sin curve')
     parser.add_argument('--k', default=1.25*np.pi, help='frequency of the sin curve')
     parser.add_argument('--y_lim', default=5, help='limitation of y when training')
@@ -47,7 +48,7 @@ def built_parser():
     """mode"""
     parser.add_argument('--max_iteration', default=1, help='maximum iteration of training (inner loop)')  # 20000
     parser.add_argument('--max_iteration_out', default=10000, help='maximum iteration of training (outer loop)')
-    parser.add_argument('--code_mode', default='evaluate', help='train or evaluate')
+    parser.add_argument('--code_mode', default='train', help='train or evaluate')
     parser.add_argument('--evaluate_iteration', default=10000, help='which net to use when evaluate')
     parser.add_argument('--load_data', default=0, help='load pre-trained data for the buffer')
     parser.add_argument('--device', default='cuda:0', help='cuda:0 or cpu')

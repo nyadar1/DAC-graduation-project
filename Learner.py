@@ -37,7 +37,7 @@ class Train(object):
         # [0, 1] <np, 1 * 2>
         self.value_loss = np.empty([0, 1])
         # logging.debug(self.value_loss)
-
+        self.alphas = []
         # [0, 1] <np, 1 * 2>
         self.policy_loss = np.empty([0, 1])
         # logging.debug(self.policy_loss)
@@ -105,7 +105,7 @@ class Train(object):
             with torch.no_grad():
                 self.control, self.velocity = policy.select_action(self.state_batch[:, 0:4])
             policy.policy_entropy_update(self.state_batch_next,torch.cat([self.control, self.velocity],dim=1))
-            print('update alpha:',policy.alpha.item())
+            self.alphas.append(policy.alpha.item())
 
         # <torch, + >
         self.policy_loss = np.append(self.policy_loss, policy_loss.detach().cpu().numpy())
@@ -193,28 +193,39 @@ class Train(object):
 
     def plot_figure(self):
 
-        print(len(self.value_loss))
-        print(len(self.policy_loss))
-
+        print('len(self.value_loss)',len(self.value_loss))
+        print('len(self.policy_loss)',len(self.policy_loss))
+        print('len(self.alpha)',len(self.alphas))
         plt.rcParams['font.family'] = ['SimHei']
+        plt.rcParams['axes.unicode_minus'] = False
+        save_dir = os.path.join('./parameters',self.args.method_version)
+        os.makedirs(save_dir,exist_ok=True)
 
         plt.figure()
         plt.plot(range(len(self.value_loss)), self.value_loss / self.args.batch_size, label='value_loss')
         plt.xlabel('迭代次数')
         plt.ylabel('$L_V$')
-        plt.show()
-        pickle.dump(self.value_loss / self.args.batch_size, open('./data/value_loss_policy.pkl', 'wb'))
-        # with open('./data/value_loss.pkl', 'rb') as f:
-        #     data = pickle.load(f)
-        # print(data)
-
+        # plt.show()
+        plt.savefig(os.path.join(save_dir,'value_loss.png'),dpi=300)
+        plt.close()
 
         plt.figure()
         plt.plot(range(len(self.policy_loss)), self.policy_loss / self.args.batch_size, label='policy_loss')
         plt.xlabel('迭代次数')
         plt.ylabel('$L_\pi$')
-        plt.show()
-        pickle.dump(self.policy_loss / self.args.batch_size, open('./data/policy_loss.pkl', 'wb'))
+        # plt.show()
+        plt.savefig(os.path.join(save_dir,'policy_loss.png'),dpi=300)
+        plt.close()
 
-        # plt.savefig('Loss.png')
-        # plt.pause(10)
+        plt.figure()
+        plt.plot(range(len(self.alphas)), self.alphas, label='alpha')
+        plt.xlabel('迭代次数')
+        plt.ylabel(r'$\alpha$')
+        # plt.show()
+        plt.savefig(os.path.join(save_dir,'alphas.png'),dpi=300)
+        plt.close()
+
+        args_dict = vars(self.args)
+        with open(os.path.join(save_dir,self.args.method_version)+'.txt',"w") as f:
+            for key, value in args_dict.items():
+                f.write(f"{key}:{value}\n")
