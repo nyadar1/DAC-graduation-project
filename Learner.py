@@ -67,7 +67,7 @@ class Train(object):
         logging.debug(self.agent_batch)
 
         # <torch, 256 * 5> abs trajectory  0-3.1416的linspace
-        ref_trajectory = dynamics.ref_traj(self.agent_batch[:, -1])
+        ref_trajectory, target_lv = dynamics.ref_traj(self.agent_batch[:, -1])
         logging.debug(ref_trajectory)
 
         # <torch, 256 * 5> # relative states
@@ -127,7 +127,7 @@ class Train(object):
             self.u_forward[i],self.longitudinal_v_forward[i] = policy.select_action(self.x_forward[i][:, 0:4])
 
             # <torch, 256 * 6>, <256 * 1>
-            self.x_forward[i + 1], _, self.l_forward[i] = dynamic.step(self.x_forward[i], self.u_forward[i], self.longitudinal_v_forward[i])
+            self.x_forward[i + 1], _, self.l_forward[i] = dynamic.step(self.x_forward[i], self.u_forward[i], self.longitudinal_v_forward[i],need_utility=True)
             # print('l_forward = ', self.l_forward[i].mean().item())
 
         # todo: why is state_batch?

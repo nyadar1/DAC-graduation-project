@@ -84,7 +84,7 @@ def evaluation(args, policy, dynamic):
     else:
         state = torch.tensor([[0.0, 0.0, 0.0, 0.0, args.target_v, 0.0]]).to(device)     # traj
 
-    x_ref = dynamic.ref_traj(state[:, -1])  # x_ref = [y_ref, 0, psi_ref, 0, 0]
+    x_ref, _ = dynamic.ref_traj(state[:, -1])  # x_ref = [y_ref, 0, psi_ref, 0, 0]
     state_r = state.detach().clone()
     state_r[:, 0:4] = state_r[:, 0:4] - x_ref    # todo: 这是相对于车辆坐标系的第一个初始状态
 
@@ -102,6 +102,7 @@ def evaluation(args, policy, dynamic):
     update_begin = []
     update_end = []
     longitudinal_vs = []
+    target_lvs = []
     for i in range(test_range):
         if i % 1000 == 0:
             print(i)
@@ -118,6 +119,7 @@ def evaluation(args, policy, dynamic):
 
         state_history = np.append(state_history, state.detach().cpu().numpy(), axis=0)
         action_history = np.append(action_history, u.detach().cpu().numpy()[:, 0])
+        # target_lv = 
     t2 = time.time()
     longitudinal_vs.append(longitudinal_vs[-1])
     print('average update time:', np.mean(np.array(update_end)-np.array(update_begin)))
@@ -161,31 +163,65 @@ def evaluation(args, policy, dynamic):
     elif args.shape == 'dlc2':
         x_coordinate = x
         width = 0.2
-        straight = 1
-        line1 = 0.5
+        straight = 2
+        line1 = 1.0
         line2 = line1 + 1
         line3 = line2 + straight
         line4 = line3 + 1
-        cycle = line4 + 0.5
+        cycle = line4 + 1.0
         xc = x_coordinate % cycle
+
+        max_speed = 0.8
+        min_speed = 0.3
         lane_position = np.zeros([len(x_coordinate), ])
         lane_angle = np.zeros([len(x_coordinate), ])
+        target_lv = np.zeros([len(x_coordinate), ])
         for i in range(len(x_coordinate)):
             if xc[i] <= line1:
                 lane_position[i] = 0
                 lane_angle[i] = 0
+                
+                if xc[i]>line1-0.5:
+                    target_lv[i] = max_speed - (xc[i]-(line1-0.5)) \
+                                            *(max_speed-min_speed)/0.5
+                else:
+                    target_lv[i] = max_speed
+
             elif line1 < xc[i] and xc[i] <= line2:
-                lane_position[i] = width*(1-np.sin((xc[i]-line1)*np.pi/(line2-line1)+np.pi/2))/2
-                lane_angle[i] = -np.arctan(width*np.pi/(line2-line1)*np.cos((xc[i]-line1)*np.pi/(line2-line1)+np.pi/2)/2)
+                lane_position[i] = width * (
+                            1 - np.sin((xc[i] - line1) * np.pi / (line2 - line1) + np.pi / 2)) / 2
+                lane_angle[i] = -np.arctan(width * np.pi / (line2 - line1) * np.cos(
+                    (xc[i] - line1) * np.pi / (line2 - line1) + np.pi / 2) / 2)
+                target_lv[i] = min_speed
+
             elif line2 < xc[i] and xc[i] <= line3:
                 lane_position[i] = width
                 lane_angle[i] = 0
+
+                if xc[i]<line2+0.5:
+                    target_lv[i] = min_speed + (xc[i]-line2) \
+                                            *(max_speed-min_speed)/0.5
+                elif xc[i]>line3-0.5:
+                    target_lv[i] = max_speed - (xc[i]-(line3-0.5)) \
+                                            *(max_speed-min_speed)/0.5
+                else:
+                    target_lv[i] = max_speed
+
             elif line3 < xc[i] and xc[i] <= line4:
-                lane_position[i] = width*(1-np.sin((xc[i]-line3)*np.pi/(line4-line3)-np.pi/2))/2
-                lane_angle[i] = -np.arctan(width*np.pi/(line4-line3)*np.cos((xc[i]-line3)*np.pi/(line4-line3)-np.pi/2)/2)
+                lane_position[i] = width * (
+                            1 - np.sin((xc[i] - line3) * np.pi / (line4 - line3) - np.pi / 2)) / 2
+                lane_angle[i] = -np.arctan(width * np.pi / (line4 - line3) * np.cos(
+                    (xc[i] - line3) * np.pi / (line4 - line3) - np.pi / 2) / 2)
+                target_lv[i] = min_speed
             else:
                 lane_position[i] = 0.
                 lane_angle[i] = 0.
+                
+                if xc[i]<line4+0.5:
+                    target_lv[i] = min_speed + (xc[i]-line4) \
+                                            *(max_speed-min_speed)/0.5
+                else:
+                    target_lv[i] = max_speed
 
         y_ref = lane_position
         print('y_ref.shape = ', y_ref.shape)
@@ -270,6 +306,7 @@ def evaluation(args, policy, dynamic):
     plt.subplot(414)
     plt.ylabel("纵向速度(m/s)")
     plt.plot(x, longitudinal_vs,linewidth=1, label='纵向速度')
+    plt.plot(x, target_lv,color = 'r',linewidth=1, label='参考纵向速度')
     plt.grid(True, linestyle='--', linewidth=0.5)
 
     plt.xlabel('$x$(m)')
@@ -306,13 +343,13 @@ def evaluation(args, policy, dynamic):
 
 
 def step_relative(statemodel, state, u, longitudinal_v):
-    x_ref = statemodel.ref_traj(state[:, -1])
+    x_ref, _ = statemodel.ref_traj(state[:, -1])
     state_r = state.detach().clone()  # relative state
     state_r[:, 0:4] = state_r[:, 0:4] - x_ref
     state_next, _, _ = statemodel.step(state, u, longitudinal_v)
     state_r_next_bias, _, _ = statemodel.step(state_r, u, longitudinal_v)
     state_r_next = state_r_next_bias.detach().clone()
     state_r_next_bias[:, [0, 2]] = state_next[:, [0, 2]]
-    x_ref_next = statemodel.ref_traj(state_next[:, -1])
+    x_ref_next,_  = statemodel.ref_traj(state_next[:, -1])
     state_r_next[:, 0:4] = state_r_next_bias[:, 0:4] - x_ref_next
     return state_next.clone().detach(), state_r_next.clone().detach()

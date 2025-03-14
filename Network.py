@@ -59,10 +59,6 @@ class Policy(nn.Module):
         longitudinal_v = (torch.sigmoid(x[:, 1])*0.2 + self.args.target_v).unsqueeze(1)
         # longitudinal_v = (x[:, 1] + 2).unsqueeze(1)*self.args.target_v
         steer = torch.mul(torch.tensor(self._output_gain).to(self.device), steer)
-        # x <torch, 256 * 1>
-        # longitudinal_v = torch.ones_like(longitudinal_v)*self.args.target_v
-        # print('network output = ',longitudinal_v,longitudinal_v.shape)
-        # print('network output = ',longitudinal_v.mean().item(),longitudinal_v.shape)
         return steer, longitudinal_v
 
     def _initialize_weights(self):
@@ -158,7 +154,7 @@ class DiffusionPolicy(nn.Module):
                 noise = torch.randn_like(a_t)
                 a_t = mean + torch.sqrt(self.beta[t]) * noise
             else:
-                a_t = mean   
+                a_t = mean
         # 最终动作添加自适应噪声
         if add_noise:
             x = torch.randn_like(a_t)

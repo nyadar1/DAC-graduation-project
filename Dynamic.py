@@ -120,8 +120,8 @@ class VehicleDynamics(DynamicsConfig):
         self.init_state[:, 5] = torch.linspace(0.0, np.pi, self.args.batch_size).to(self.device)  # - 6084.2
 
         # <torch, 256 * 5>
-        init_ref = self.ref_traj(self.init_state[:, -1]).to(self.device)
-
+        init_ref,target_lv = self.ref_traj(self.init_state[:, -1])
+        init_ref.to(self.device)
         # <torch, 256 * 6> # col x = 0
         init_ref_all = torch.cat((init_ref, torch.zeros([self.args.batch_size, 1]).to(self.device)), 1)
         init_ref_all = torch.cat((init_ref_all, torch.zeros([self.args.batch_size, 1]).to(self.device)), 1)
@@ -189,6 +189,7 @@ class VehicleDynamics(DynamicsConfig):
         return:
             state_ref <torch, 256 * 4>
         '''
+        target_lv = torch.zeros([len(x_coordinate), ]).to(self.device)
         if self.args.shape == 'sin':
             k, a = self.args.k, self.args.a
             # x_coordinate = x
@@ -211,13 +212,6 @@ class VehicleDynamics(DynamicsConfig):
                     lane_angle[i] = torch.atan(a * k * torch.cos(k * xc[i])).to(self.device)
             y_ref = lane_position
             psi_ref = lane_angle
-            # print(y_ref.shape)
-            # <torch, 256>
-            # y_ref = a * torch.sin(k * x_coordinate)
-
-            # <torch, 256>
-            # psi_ref = torch.atan(a * k * torch.cos(k * x_coordinate))
-
             # [0] <torch, 256>
             zeros = torch.zeros([len(x_coordinate)]).to(self.device)
             # print(zeros)
@@ -253,35 +247,65 @@ class VehicleDynamics(DynamicsConfig):
         elif self.args.shape == 'dlc2':
             # x_coordinate = x
             width = 0.2
-            straight = 1
-            line1 = 0.5
+            straight = 2
+            line1 = 1.0
             line2 = line1 + 1
             line3 = line2 + straight
             line4 = line3 + 1
-            cycle = line4 + 0.5
+            cycle = line4 + 1.0
             xc = x_coordinate % cycle
+
+            max_speed = 0.8
+            min_speed = 0.3
             lane_position = torch.zeros([len(x_coordinate), ]).to(self.device)
             lane_angle = torch.zeros([len(x_coordinate), ]).to(self.device)
+            
             for i in range(len(x_coordinate)):
                 if xc[i] <= line1:
                     lane_position[i] = 0
                     lane_angle[i] = 0
+                    
+                    if xc[i]>line1-0.5:
+                        target_lv[i] = max_speed - (xc[i]-(line1-0.5)) \
+                                                *(max_speed-min_speed)/0.5
+                    else:
+                        target_lv[i] = max_speed
+
                 elif line1 < xc[i] and xc[i] <= line2:
                     lane_position[i] = width * (
                                 1 - torch.sin((xc[i] - line1) * torch.pi / (line2 - line1) + torch.pi / 2)) / 2
                     lane_angle[i] = -torch.arctan(width * torch.pi / (line2 - line1) * torch.cos(
                         (xc[i] - line1) * torch.pi / (line2 - line1) + torch.pi / 2) / 2)
+                    target_lv[i] = min_speed
+
                 elif line2 < xc[i] and xc[i] <= line3:
                     lane_position[i] = width
                     lane_angle[i] = 0
+
+                    if xc[i]<line2+0.5:
+                        target_lv[i] = min_speed + (xc[i]-line2) \
+                                                *(max_speed-min_speed)/0.5
+                    elif xc[i]>line3-0.5:
+                        target_lv[i] = max_speed - (xc[i]-(line3-0.5)) \
+                                                *(max_speed-min_speed)/0.5
+                    else:
+                        target_lv[i] = max_speed
+
                 elif line3 < xc[i] and xc[i] <= line4:
                     lane_position[i] = width * (
                                 1 - torch.sin((xc[i] - line3) * torch.pi / (line4 - line3) - torch.pi / 2)) / 2
                     lane_angle[i] = -torch.arctan(width * torch.pi / (line4 - line3) * torch.cos(
                         (xc[i] - line3) * torch.pi / (line4 - line3) - torch.pi / 2) / 2)
+                    target_lv[i] = min_speed
                 else:
                     lane_position[i] = 0.
                     lane_angle[i] = 0.
+                    
+                    if xc[i]<line4+0.5:
+                        target_lv[i] = min_speed + (xc[i]-line4) \
+                                                *(max_speed-min_speed)/0.5
+                    else:
+                        target_lv[i] = max_speed
 
             y_ref = lane_position
             # print('y_ref.shape = ', y_ref.shape)
@@ -332,7 +356,7 @@ class VehicleDynamics(DynamicsConfig):
             exit(1)
 
         # <torch, 256 * 4>
-        return state_ref.T
+        return state_ref.T, target_lv
     # 输入量均为世界坐标系下
     def _state_function(self, state, action, longitudinal_v):
         '''
@@ -393,7 +417,7 @@ class VehicleDynamics(DynamicsConfig):
         # <torch, 256 * 6> <256> <256> <256> <256>
         return deriv_state.T# 转置
 
-    def _utility(self, state, control, longitudinal_v):
+    def _utility(self, state, control, longitudinal_v,target_lv):
         '''
         obtain the cost
         params:
@@ -405,13 +429,11 @@ class VehicleDynamics(DynamicsConfig):
         # print('input = ',state[:, 2].mean().item(), control[:, 0].mean().item(), longitudinal_v[:, 0].mean().item())
         # <torch, 256>
         utility = 10 * torch.pow(state[:, 0], 2) + 0.5 * torch.pow(state[:, 2], 2) + \
-                  0.01 * torch.pow(control[:, 0], 2) 
-        + 0.001 * torch.pow(torch.abs(longitudinal_v[:, 0]-self.former_longitudinal_v[:, 0]), 2)
-        # 这个速度差异太小了可以采用0.2-torch.abs(...)
+                  0.01 * torch.pow(control[:, 0], 2) + 5.0 * torch.pow(torch.abs(longitudinal_v[:, 0]-target_lv[:, 0]), 2)
         # <torch, 256>
         return utility
     # 这里step需要输入agent state，即各变量均在世界坐标系下
-    def step(self, state, action, longitudinal_v):
+    def step(self, state, action, longitudinal_v,need_utility=False):
         '''
         step forward abs states
         params:
@@ -427,7 +449,7 @@ class VehicleDynamics(DynamicsConfig):
             alpha2 <torch, 256>
         '''
         deriv_state = self._state_function(state, action, longitudinal_v)
-
+        
         # <torch, 256 * 6> # forward Euler method
         state_next = state + self.Ts * deriv_state
 
@@ -437,7 +459,14 @@ class VehicleDynamics(DynamicsConfig):
         f_xu = deriv_state[:, 0:4]
         
         # <torch, 256>
-        utility = self._utility(state, action, longitudinal_v)
+        if need_utility:
+            _, target_lv = self.ref_traj(state[:, -1])
+            target_lv = target_lv.unsqueeze(1)
+            utility = self._utility(state, action, longitudinal_v, target_lv)
+        else:
+            utility = 0.
+        
+        
         self.former_longitudinal_v = longitudinal_v.clone().detach()
         # <torch, 256 * 6> <256> <256> <256> <256> <256> <256>
         return state_next, f_xu, utility
@@ -453,7 +482,7 @@ class VehicleDynamics(DynamicsConfig):
             state_r_next (clone)<torch(detach), 256 * 6>
         """
         # <torch, 256>
-        x_ref = self.ref_traj(state[:, -1])
+        x_ref, target_lv = self.ref_traj(state[:, -1])
 
         # (clone)<torch(detach), 256 * 6>
         state_r = state.detach().clone()  # relative state
@@ -475,7 +504,7 @@ class VehicleDynamics(DynamicsConfig):
         state_r_next_bias[:, [0, 2]] = state_next[:, [0, 2]]  # y psi with reference update by absolute value
 
         # <torch, 256>
-        x_ref_next = self.ref_traj(state_next[:, -1])
+        x_ref_next,target_lv_next = self.ref_traj(state_next[:, -1])
 
         # <torch, 256 * 4>
         state_r_next[:, 0:4] = state_r_next_bias[:, 0:4] - x_ref_next

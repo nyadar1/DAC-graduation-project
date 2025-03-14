@@ -16,6 +16,7 @@ import torch
 import logging
 import argparse
 import pickle
+import time
 import numpy as np
 from Network import DAC, Value
 from Learner import Train
@@ -31,8 +32,8 @@ def built_parser():
     parser.add_argument('--state_dim', default=4, help='dimension of state')
     parser.add_argument('--action_dim', default=2, help='dimension of action')
     parser.add_argument('--dynamic_dim', default=6, help='dimension of vehicle dynamic')
-
-    parser.add_argument('--method_version', default='2', help='method_version')
+    # method version3开始引入目标纵向速度，目前现在dlc2上训练
+    parser.add_argument('--method_version', default='3', help='method_version')
     """training"""
     parser.add_argument('--buffer_size', default=5000)
     parser.add_argument('--batch_size', default=256)
@@ -52,8 +53,8 @@ def built_parser():
     parser.add_argument('--target_v', default=0.2, help='default velocity of longitudinal')
     """mode"""
     parser.add_argument('--max_iteration_out', default=10000, help='maximum iteration of training (outer loop)')
-    parser.add_argument('--code_mode', default='evaluate', help='train or evaluate')
-    parser.add_argument('--evaluate_iteration', default=10000, help='which net to use when evaluate')
+    parser.add_argument('--code_mode', default='train', help='train or evaluate')
+    parser.add_argument('--evaluate_iteration', default=3000, help='which net to use when evaluate')
     parser.add_argument('--load_data', default=0, help='load pre-trained data for the buffer')
     parser.add_argument('--device', default='cuda:0', help='cuda:0 or cpu')
 
@@ -83,11 +84,16 @@ def main():
     os.makedirs(policy_log_dir, exist_ok=True)  # 递归创建目录
     value_log_dir = './weights/value_net/'
     os.makedirs(value_log_dir, exist_ok=True)
-
+    '''
+    由于训练过慢(forward step中需要更新target_lv)
+    因此考虑将target_lv加在状态量后面，每次x坐标的新增值指导下一步target_lv
+    所以现在的状态量为[y,v(横向),psi,w,V(纵向),x_coordinate]
+    现在还没改，先git一版这个很慢的
+    '''
     if args.code_mode == 'train':
         train = Train(args)
         # logging.debug(train)
-
+        begin = time.time()
         if args.load_data == 1:
             value.load_parameters(value_log_dir, 10000)
             policy.actor.load_parameters(policy_log_dir, 10000)
@@ -108,6 +114,8 @@ def main():
             # if t_iter_index % 100 == 0:
             #     policy.actor.save_parameters(policy_log_dir, t_iter_index)
             if t_iter_index % 1000 == 0:
+                    now = time.time()
+                    print('Using time:',int((now-begin)/60),'min')
                     with open(os.path.join(policy_log_dir,f'{args.method_version}_DAC{t_iter_index}.pkl'),
                                 'wb') as f:
                         pickle.dump(policy, f)
@@ -116,6 +124,7 @@ def main():
         train.plot_figure()
 
     elif args.code_mode == 'evaluate':
+
         '''tracking performance depend on the trajectory shape k_curve and longitudinal speed u'''
         with open(os.path.join(policy_log_dir,f'{args.method_version}_DAC{args.evaluate_iteration}.pkl'),'rb') as f:
             policy = pickle.load(f)
