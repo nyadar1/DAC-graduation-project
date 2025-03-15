@@ -162,70 +162,72 @@ def evaluation(args, policy, dynamic):
 
     elif args.shape == 'dlc2':
         x_coordinate = x
-        width = 0.2
+        width = 0.2 
         straight = 2
         line1 = 1.0
         line2 = line1 + 1
         line3 = line2 + straight
         line4 = line3 + 1
         cycle = line4 + 1.0
-        xc = x_coordinate % cycle
+        xc = torch.from_numpy(x_coordinate % cycle)
 
         max_speed = 0.8
         min_speed = 0.3
-        lane_position = np.zeros([len(x_coordinate), ])
-        lane_angle = np.zeros([len(x_coordinate), ])
-        target_lv = np.zeros([len(x_coordinate), ])
-        for i in range(len(x_coordinate)):
-            if xc[i] <= line1:
-                lane_position[i] = 0
-                lane_angle[i] = 0
-                
-                if xc[i]>line1-0.5:
-                    target_lv[i] = max_speed - (xc[i]-(line1-0.5)) \
-                                            *(max_speed-min_speed)/0.5
-                else:
-                    target_lv[i] = max_speed
+        delta_speed = max_speed - min_speed
+        target_lv = torch.zeros_like(torch.from_numpy(x_coordinate))
+        lane_position = torch.zeros_like(torch.from_numpy(x_coordinate))
+        lane_angle = torch.zeros_like(torch.from_numpy(x_coordinate))
 
-            elif line1 < xc[i] and xc[i] <= line2:
-                lane_position[i] = width * (
-                            1 - np.sin((xc[i] - line1) * np.pi / (line2 - line1) + np.pi / 2)) / 2
-                lane_angle[i] = -np.arctan(width * np.pi / (line2 - line1) * np.cos(
-                    (xc[i] - line1) * np.pi / (line2 - line1) + np.pi / 2) / 2)
-                target_lv[i] = min_speed
+        mask_le_line1 = xc<=line1
+        lane_position[mask_le_line1] = 0
+        lane_angle[mask_le_line1] = 0
 
-            elif line2 < xc[i] and xc[i] <= line3:
-                lane_position[i] = width
-                lane_angle[i] = 0
+        mask_line1_line2 = (line1 < xc) & (xc <= line2)
+        lane_position[mask_line1_line2] = width * (
+                            1 - torch.sin((xc[mask_line1_line2] - line1) * torch.pi / (line2 - line1) + torch.pi / 2)) / 2
+        lane_angle[mask_line1_line2] = -torch.arctan(width * torch.pi / (line2 - line1) * torch.cos(
+                    (xc[mask_line1_line2] - line1) * torch.pi / (line2 - line1) + torch.pi / 2) / 2)
+        
+        mask_line2_line3 = (line2 < xc) & (xc <= line3)
+        lane_position[mask_line2_line3] = width
+        lane_angle[mask_line2_line3] = 0
+        
+        mask_line3_line4 = (line3 < xc) & (xc <= line4)
+        lane_position[mask_line3_line4] = width * (
+                            1 - torch.sin((xc[mask_line3_line4] - line3) * torch.pi / (line4 - line3) - torch.pi / 2)) / 2
+        lane_angle[mask_line3_line4] = -torch.arctan(width * torch.pi / (line4 - line3) * torch.cos(
+                    (xc[mask_line3_line4] - line3) * torch.pi / (line4 - line3) - torch.pi / 2) / 2)
+        
+        mask_gt_line4 = xc>line4
+        lane_position[mask_gt_line4] = 0.
+        lane_angle[mask_gt_line4] = 0.
 
-                if xc[i]<line2+0.5:
-                    target_lv[i] = min_speed + (xc[i]-line2) \
-                                            *(max_speed-min_speed)/0.5
-                elif xc[i]>line3-0.5:
-                    target_lv[i] = max_speed - (xc[i]-(line3-0.5)) \
-                                            *(max_speed-min_speed)/0.5
-                else:
-                    target_lv[i] = max_speed
 
-            elif line3 < xc[i] and xc[i] <= line4:
-                lane_position[i] = width * (
-                            1 - np.sin((xc[i] - line3) * np.pi / (line4 - line3) - np.pi / 2)) / 2
-                lane_angle[i] = -np.arctan(width * np.pi / (line4 - line3) * np.cos(
-                    (xc[i] - line3) * np.pi / (line4 - line3) - np.pi / 2) / 2)
-                target_lv[i] = min_speed
-            else:
-                lane_position[i] = 0.
-                lane_angle[i] = 0.
-                
-                if xc[i]<line4+0.5:
-                    target_lv[i] = min_speed + (xc[i]-line4) \
-                                            *(max_speed-min_speed)/0.5
-                else:
-                    target_lv[i] = max_speed
+        mask_slowdown = (xc>(line1-0.5)) & mask_le_line1
+        target_lv[mask_slowdown] = max_speed- (xc[mask_slowdown]-(line1-0.5))*delta_speed/0.5
+        target_lv[mask_le_line1&~mask_slowdown] = max_speed
 
-        y_ref = lane_position
+        target_lv[mask_line1_line2] = min_speed
+
+        mask_ascend = (xc<(line2+0.5))&mask_line2_line3
+        mask_descend = (xc>(line3-0.5))&mask_line2_line3
+        mask_flat = mask_line2_line3 & ~mask_ascend & ~mask_descend
+        target_lv[mask_ascend] = min_speed + (xc[mask_ascend]-line2)*delta_speed/0.5
+        target_lv[mask_descend] = max_speed - (xc[mask_descend]-(line3-0.5))*delta_speed/0.5
+        target_lv[mask_flat] = max_speed
+
+        target_lv[mask_line3_line4]=min_speed
+
+        mask_final_ascend = (xc<(line4+0.5))&mask_gt_line4
+        target_lv[mask_final_ascend]=min_speed+(xc[mask_final_ascend]-line4)*delta_speed/0.5
+        target_lv[mask_gt_line4&~mask_final_ascend]=max_speed
+
+
+        y_ref = lane_position.numpy()
         print('y_ref.shape = ', y_ref.shape)
-        psi_ref = lane_angle
+        psi_ref = lane_angle.numpy()
+        xc = xc.numpy()
+        target_lv = target_lv.numpy()
 
     elif args.shape == 'traj':
         # pass

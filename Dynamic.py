@@ -181,7 +181,7 @@ class VehicleDynamics(DynamicsConfig):
         # <torch, 256 * 6>
         return reset_state
 
-    def ref_traj(self, x_coordinate):
+    def ref_traj_before(self, x_coordinate):
         '''
         obtain the reference trajectory y_ref & psi_ref in abs coordinate system
         params:
@@ -189,7 +189,7 @@ class VehicleDynamics(DynamicsConfig):
         return:
             state_ref <torch, 256 * 4>
         '''
-        target_lv = torch.zeros([len(x_coordinate), ]).to(self.device)
+        
         if self.args.shape == 'sin':
             k, a = self.args.k, self.args.a
             # x_coordinate = x
@@ -246,6 +246,7 @@ class VehicleDynamics(DynamicsConfig):
             # print(state_ref)
         elif self.args.shape == 'dlc2':
             # x_coordinate = x
+            target_lv = torch.zeros([len(x_coordinate), ]).to(self.device)
             width = 0.2
             straight = 2
             line1 = 1.0
@@ -429,9 +430,80 @@ class VehicleDynamics(DynamicsConfig):
         # print('input = ',state[:, 2].mean().item(), control[:, 0].mean().item(), longitudinal_v[:, 0].mean().item())
         # <torch, 256>
         utility = 10 * torch.pow(state[:, 0], 2) + 0.5 * torch.pow(state[:, 2], 2) + \
-                  0.01 * torch.pow(control[:, 0], 2) + 5.0 * torch.pow(torch.abs(longitudinal_v[:, 0]-target_lv[:, 0]), 2)
+                  0.01 * torch.pow(control[:, 0], 2) + 1.0 * torch.pow(torch.abs(longitudinal_v[:, 0]-target_lv[:, 0]), 2)
         # <torch, 256>
         return utility
+    
+    def ref_traj(self,x_coordinate):
+        if self.args.shape == 'dlc2':
+            # x_coordinate = current_x + deriv_x*self.Ts
+            width = 0.2 
+            straight = 2
+            line1 = 1.0
+            line2 = line1 + 1
+            line3 = line2 + straight
+            line4 = line3 + 1
+            cycle = line4 + 1.0
+            xc = x_coordinate % cycle
+
+            max_speed = 0.8
+            min_speed = 0.3
+            delta_speed = max_speed - min_speed
+            target_lv = torch.zeros_like(x_coordinate)
+            lane_position = torch.zeros_like(x_coordinate)
+            lane_angle = torch.zeros_like(x_coordinate)
+
+            mask_le_line1 = xc<=line1
+            lane_position[mask_le_line1] = 0
+            lane_angle[mask_le_line1] = 0
+
+            mask_line1_line2 = (line1 < xc) & (xc <= line2)
+            lane_position[mask_line1_line2] = width * (
+                                1 - torch.sin((xc[mask_line1_line2] - line1) * torch.pi / (line2 - line1) + torch.pi / 2)) / 2
+            lane_angle[mask_line1_line2] = -torch.arctan(width * torch.pi / (line2 - line1) * torch.cos(
+                        (xc[mask_line1_line2] - line1) * torch.pi / (line2 - line1) + torch.pi / 2) / 2)
+            
+            mask_line2_line3 = (line2 < xc) & (xc <= line3)
+            lane_position[mask_line2_line3] = width
+            lane_angle[mask_line2_line3] = 0
+            
+            mask_line3_line4 = (line3 < xc) & (xc <= line4)
+            lane_position[mask_line3_line4] = width * (
+                                1 - torch.sin((xc[mask_line3_line4] - line3) * torch.pi / (line4 - line3) - torch.pi / 2)) / 2
+            lane_angle[mask_line3_line4] = -torch.arctan(width * torch.pi / (line4 - line3) * torch.cos(
+                        (xc[mask_line3_line4] - line3) * torch.pi / (line4 - line3) - torch.pi / 2) / 2)
+            
+            mask_gt_line4 = xc>line4
+            lane_position[mask_gt_line4] = 0.
+            lane_angle[mask_gt_line4] = 0.
+
+
+            mask_slowdown = (xc>(line1-0.5)) & mask_le_line1
+            target_lv[mask_slowdown] = max_speed- (xc[mask_slowdown]-(line1-0.5))*delta_speed/0.5
+            target_lv[mask_le_line1&~mask_slowdown] = max_speed
+
+            target_lv[mask_line1_line2] = min_speed
+
+            mask_ascend = (xc<(line2+0.5))&mask_line2_line3
+            mask_descend = (xc>(line3-0.5))&mask_line2_line3
+            mask_flat = mask_line2_line3 & ~mask_ascend & ~mask_descend
+            target_lv[mask_ascend] = min_speed + (xc[mask_ascend]-line2)*delta_speed/0.5
+            target_lv[mask_descend] = max_speed - (xc[mask_descend]-(line3-0.5))*delta_speed/0.5
+            target_lv[mask_flat] = max_speed
+
+            target_lv[mask_line3_line4]=min_speed
+
+            mask_final_ascend = (xc<(line4+0.5))&mask_gt_line4
+            target_lv[mask_final_ascend]=min_speed+(xc[mask_final_ascend]-line4)*delta_speed/0.5
+            target_lv[mask_gt_line4&~mask_final_ascend]=max_speed
+
+            y_ref = lane_position
+            psi_ref = lane_angle
+            zeros = torch.zeros([len(x_coordinate)]).to(self.device)
+            state_ref = torch.cat((y_ref.unsqueeze(0), zeros.unsqueeze(0), psi_ref.unsqueeze(0), zeros.unsqueeze(0)), 0)
+
+        return state_ref.T, target_lv
+
     # 这里step需要输入agent state，即各变量均在世界坐标系下
     def step(self, state, action, longitudinal_v,need_utility=False):
         '''

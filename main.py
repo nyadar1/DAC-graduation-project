@@ -53,8 +53,8 @@ def built_parser():
     parser.add_argument('--target_v', default=0.2, help='default velocity of longitudinal')
     """mode"""
     parser.add_argument('--max_iteration_out', default=10000, help='maximum iteration of training (outer loop)')
-    parser.add_argument('--code_mode', default='train', help='train or evaluate')
-    parser.add_argument('--evaluate_iteration', default=3000, help='which net to use when evaluate')
+    parser.add_argument('--code_mode', default='evaluate', help='train or evaluate')
+    parser.add_argument('--evaluate_iteration', default=10000, help='which net to use when evaluate')
     parser.add_argument('--load_data', default=0, help='load pre-trained data for the buffer')
     parser.add_argument('--device', default='cuda:0', help='cuda:0 or cpu')
 
@@ -88,7 +88,7 @@ def main():
     由于训练过慢(forward step中需要更新target_lv)
     因此考虑将target_lv加在状态量后面，每次x坐标的新增值指导下一步target_lv
     所以现在的状态量为[y,v(横向),psi,w,V(纵向),x_coordinate]
-    现在还没改，先git一版这个很慢的
+    仅修改了ref_traj函数,不需要向状态量中添加target_lv,效率很高滴
     '''
     if args.code_mode == 'train':
         train = Train(args)
