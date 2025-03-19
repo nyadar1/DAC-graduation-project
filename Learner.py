@@ -78,7 +78,6 @@ class Train(object):
         # 这里传入的是state_batch, 因为policy网络的输入必须是差值才有意义
         # policy产生控制策略
         # <torch, 256 * 2>
-        # self.control, self.velocity = policy.forward(self.state_batch[:, 0:4])
         self.control, self.velocity = policy.select_action(self.state_batch[:, 0:4])
         logging.debug(self.control)
 
@@ -91,6 +90,7 @@ class Train(object):
     # policy <NN>, value <NN>
     def policy_update(self, policy, value, iter_index_out):
         # <torch, 256 * 1>
+        # self.value_next = value(self.state_batch_next)
         self.value_next = value(self.state_batch_next)
 
         # <torch, 1> # J_actor
@@ -104,7 +104,11 @@ class Train(object):
         if (iter_index_out+1)%100==0:
             with torch.no_grad():
                 self.control, self.velocity = policy.select_action(self.state_batch[:, 0:4])
-            policy.policy_entropy_update(self.state_batch_next,torch.cat([self.control, self.velocity],dim=1))
+                
+            # policy.policy_entropy_update(self.state_batch_next[:,:4],
+            #                              torch.cat([self.control, self.velocity],dim=1))
+            policy.policy_entropy_update(self.state_batch_next,
+                                          torch.cat([self.control, self.velocity],dim=1))
             self.alphas.append(policy.alpha.item())
 
         # <torch, + >
@@ -164,8 +168,8 @@ class Train(object):
         self.state_batch.requires_grad_(False)
 
         # <torch, 256 * 1>
-        current_value = value(self.state_batch[:, 0:4])
-        logging.debug(current_value)
+        self.current_value = value(self.state_batch[:, 0:4])
+        logging.debug(self.current_value)
 
         # todo:如果增加了纵向控制，那么其平衡状态的速度不再是0！
         # [0, 0, 0, 0] <torch, 1 * 4>
@@ -175,7 +179,7 @@ class Train(object):
         value_equilibrium = value(equilibrium_state)
 
         # <torch, 1> # J_critic
-        value_loss = 1 / 2 * torch.mean(torch.pow((target_value - current_value), 2)) \
+        value_loss = 1 / 2 * torch.mean(torch.pow((target_value - self.current_value), 2)) \
                      + 10 * torch.pow(value_equilibrium, 2)
 
         # for i = 0 : 1, 2 steps PEV #执行第二次时出错
@@ -205,6 +209,7 @@ class Train(object):
         plt.plot(range(len(self.value_loss)), self.value_loss / self.args.batch_size, label='value_loss')
         plt.xlabel('迭代次数')
         plt.ylabel('$L_V$')
+        plt.legend(loc="upper right")
         # plt.show()
         plt.savefig(os.path.join(save_dir,'value_loss.png'),dpi=300)
         plt.close()
@@ -213,6 +218,7 @@ class Train(object):
         plt.plot(range(len(self.policy_loss)), self.policy_loss / self.args.batch_size, label='policy_loss')
         plt.xlabel('迭代次数')
         plt.ylabel('$L_\pi$')
+        plt.legend(loc="upper right")
         # plt.show()
         plt.savefig(os.path.join(save_dir,'policy_loss.png'),dpi=300)
         plt.close()
@@ -221,6 +227,7 @@ class Train(object):
         plt.plot(range(len(self.alphas)), self.alphas, label='alpha')
         plt.xlabel('迭代次数')
         plt.ylabel(r'$\alpha$')
+        plt.legend(loc="upper right")
         # plt.show()
         plt.savefig(os.path.join(save_dir,'alphas.png'),dpi=300)
         plt.close()

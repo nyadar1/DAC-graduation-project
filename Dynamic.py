@@ -430,7 +430,10 @@ class VehicleDynamics(DynamicsConfig):
         # print('input = ',state[:, 2].mean().item(), control[:, 0].mean().item(), longitudinal_v[:, 0].mean().item())
         # <torch, 256>
         utility = 10 * torch.pow(state[:, 0], 2) + 0.5 * torch.pow(state[:, 2], 2) + \
-                  0.01 * torch.pow(control[:, 0], 2) + 1.0 * torch.pow(torch.abs(longitudinal_v[:, 0]-target_lv[:, 0]), 2)
+                  0.01 * torch.pow(control[:, 0], 2) + 7.0 * torch.pow(torch.abs(longitudinal_v[:, 0]-target_lv[:, 0]), 2)
+        '''
+        V *u(标量)
+        '''
         # <torch, 256>
         return utility
     

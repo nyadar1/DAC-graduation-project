@@ -245,7 +245,7 @@ class Value(nn.Module):
             x <torch, 256 * 2>
         '''
         # <torch, 256 * 4>
-        x = torch.mul(x, self._norm_matrix)# element-wise multiplication
+        # x = torch.mul(x, self._norm_matrix)# element-wise multiplication
 
         # <torch, 256 * 2>
         x = self.layers(x)
@@ -331,6 +331,6 @@ class DAC:
         f_hat = 1/(bandwidth*np.sqrt(2 * np.pi))*(sum(K)/len(K))+1e-8
         entropy = torch.log(f_hat)
         if math.isinf(entropy.mean().item()) or math.isnan(entropy.mean().item()):
-            print("f_hat corrupted",f_hat,entropy)
+            input("f_hat corrupted",f_hat,entropy,actions)
     
         return entropy

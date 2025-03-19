@@ -109,7 +109,7 @@ def evaluation(args, policy, dynamic):
         # render(args, state)
         # todo: input of policy network must be a error state
         update_begin.append(time.time())
-        u,longitudinal_v = policy.select_action(state_r[:, 0:4],eval=True)
+        u,longitudinal_v = policy.select_action(torch.cat((state_r[:, 0:4],state_r[:,5].unsqueeze(1)),dim=1),eval=True)
         if longitudinal_v.item()!=0:
             longitudinal_vs.append(longitudinal_v.item())
         # print(longitudinal_v.item())
@@ -309,12 +309,10 @@ def evaluation(args, policy, dynamic):
     plt.ylabel("纵向速度(m/s)")
     plt.plot(x, longitudinal_vs,linewidth=1, label='纵向速度')
     plt.plot(x, target_lv,color = 'r',linewidth=1, label='参考纵向速度')
+    plt.legend(loc="upper right")
     plt.grid(True, linestyle='--', linewidth=0.5)
 
     plt.xlabel('$x$(m)')
-    # plt.plot(x, psi_ref, color='r', linestyle=':', label='参考轨迹角度')
-
-    # plt.legend(loc="upper right")
 
     # 统计定量分析
     print('mean y error=',np.sqrt(np.sum((y - y_ref) * (y - y_ref)) / len(y)))
@@ -322,27 +320,16 @@ def evaluation(args, policy, dynamic):
     psi = state_history[:, 2]
     print('mean psi error',np.sqrt(np.sum((psi - psi_ref) * (psi - psi_ref)) / len(y)))
     print('max psi error=',max(psi - psi_ref))
-
-    # plt.subplot(122)
-    # plt.xlabel("time(0.05s)")
-    # plt.ylabel("steering angle(rad)")
-    # plt.plot(action_history, 'r', linewidth=2.0, label='action')
-    # plt.plot(disturb_history, 'b', linewidth=1.0, label='disturbance')
-    # plt.legend(loc="upper right")
-
-    # plt.subplot(223)
-    # plt.title('Tracking error')
-    # plt.plot(x, y - y_ref)
-    #
-    # plt.subplot(224)
-    # plt.title('Velocity')
-    # plt.plot(state_history[:, 4], 'r', linewidth=2.0, label='$v_x\ $ [m/s]')
-
-    # plt.subplot(225)
-    # plt.title('Acceleration')
-    # plt.plot(action_history[:, 1], 'r', linewidth=2.0, label='$v_x\ $ [m/s]')
     plt.show()
 
+    half = int(len(x)/2)
+    plt.subplot(211)
+    plt.plot(x[:half], y_ref[:half], color='b', linestyle=':', linewidth=1, label='参考轨迹')
+    plt.legend(loc="upper right")
+    plt.subplot(212)
+    plt.plot(x[:half], target_lv[:half],color = 'r',linewidth=1, label='参考纵向速度')
+    plt.legend(loc="upper right")
+    plt.show()
 
 def step_relative(statemodel, state, u, longitudinal_v):
     x_ref, _ = statemodel.ref_traj(state[:, -1])
