@@ -1,7 +1,7 @@
-import torch
+import torch,math
 import numpy as np
 import csv
-
+import matplotlib.pyplot as plt
 from Trajectory import get_traj
 
 
@@ -418,7 +418,7 @@ class VehicleDynamics(DynamicsConfig):
         # <torch, 256 * 6> <256> <256> <256> <256>
         return deriv_state.T# 转置
 
-    def _utility(self, state, control, longitudinal_v,target_lv):
+    def _utility(self, state, control, longitudinal_v):
         '''
         obtain the cost
         params:
@@ -430,14 +430,85 @@ class VehicleDynamics(DynamicsConfig):
         # print('input = ',state[:, 2].mean().item(), control[:, 0].mean().item(), longitudinal_v[:, 0].mean().item())
         # <torch, 256>
         utility = 10 * torch.pow(state[:, 0], 2) + 0.5 * torch.pow(state[:, 2], 2) + \
-                  0.01 * torch.pow(control[:, 0], 2) + 7.0 * torch.pow(torch.abs(longitudinal_v[:, 0]-target_lv[:, 0]), 2)
+                  0.01 * torch.pow(control[:, 0], 2)
         '''
         V *u(标量)
         '''
-        # <torch, 256>
+        # steer ratio and penalty steer范围为(-1,1)因此ratio直接沿用control[:,0]
+        steer_ratio = torch.abs(control[:,0])
+        speed_penalty = 0.005*torch.exp(-2.0*longitudinal_v[:,0])# *torch.pow(longitudinal_v[:,0],2)
+        smooth_v = 0.002*torch.pow(longitudinal_v[:,0]-self.former_longitudinal_v[:,0],2)
+        # method 4仅使用speed_penalty = -0.005*torch.pow(longitudinal_v[:,0],2)作为补充
+        # speed_penalty += 0.01*torch.exp(2.0*steer_ratio)*torch.pow(longitudinal_v[:,0],2)
+        max_speed = 0.9
+        # safe_speed = max_speed*torch.sqrt(1.0-steer_ratio**0.075)
+        # speed_constraint = 0.5*torch.relu(torch.pow(longitudinal_v[:,0]-safe_speed,2))
+        utility += speed_penalty + smooth_v #+speed_constraint
         return utility
     
     def ref_traj(self,x_coordinate):
+        if self.args.shape == 'l_dic2':
+            # x_coordinate = torch.from_numpy(np.linspace(0,80,4000)).cuda()
+            width = 0.2 
+            straight = 2.0
+            circle_straight = 1.0
+            line1 = 2.0 # 2
+            line2 = line1 + 1.0 # 3
+            line3 = line2 + 1.0
+            line4 = line3 + 1.0
+            line5 = line4 + 2.0
+            line6 = line5 + 1.0
+            line7 = line6 + 1.0
+            cycle = line7 + 1.0
+
+            xc = x_coordinate % cycle
+
+            lane_position = torch.zeros_like(x_coordinate)
+            lane_angle = torch.zeros_like(x_coordinate)
+
+            mask_le_line1 = xc<=line1
+            lane_position[mask_le_line1] = 0
+            lane_angle[mask_le_line1] = 0
+
+            mask_line1_line2 = (line1 < xc) & (xc <= line2)
+            lane_position[mask_line1_line2] = -torch.sqrt(4/3-(xc[mask_line1_line2]-line1)**2)+2/math.sqrt(3.0)
+            lane_angle[mask_line1_line2] = torch.arctan((xc[mask_line1_line2]-line1)/(2/math.sqrt(3.0)-lane_position[mask_line1_line2]))
+            
+            mask_line2_line3 = (line2 < xc) & (xc <= line3)
+            lane_position[mask_line2_line3] = (xc[mask_line2_line3]-line2)*math.sqrt(3.0)+1/math.sqrt(3.0)
+            lane_angle[mask_line2_line3] = torch.pi/3
+            
+            mask_line3_line4 = (line3 < xc) & (xc <= line4)
+            lane_position[mask_line3_line4] = torch.sqrt(4/3-((xc[mask_line3_line4]-line3)-1)**2)-1/math.sqrt(3.0)+math.sqrt(3.0)+1/math.sqrt(3.0)
+            lane_angle[mask_line3_line4] = torch.arctan(-((xc[mask_line3_line4]-line3)-1)/((lane_position[mask_line3_line4]-(math.sqrt(3.0)+1/math.sqrt(3.0)))+1/math.sqrt(3.0)))
+            
+            mask_line4_line5 = (line4<xc) & (xc<=line5)
+            lane_position[mask_line4_line5] = 2/math.sqrt(3)+math.sqrt(3)
+            lane_angle[mask_line4_line5] = 0.
+
+            mask_line5_line6 = (line5<xc) & (xc<=line6)
+            lane_position[mask_line5_line6] = 2/math.sqrt(3)+math.sqrt(3)+torch.sqrt(4/3-(xc[mask_line5_line6]-line5)**2)-2/math.sqrt(3.0)
+            lane_angle[mask_line5_line6] = torch.arctan(-(xc[mask_line5_line6]-line5)/(2/math.sqrt(3.0)+(lane_position[mask_line5_line6]-(2/math.sqrt(3)+math.sqrt(3)))))
+
+            mask_line6_line7 = (line6<xc) & (xc<=line7)
+            lane_position[mask_line6_line7] = -(xc[mask_line6_line7]-line6)*math.sqrt(3.0)+1/math.sqrt(3)+math.sqrt(3)
+            lane_angle[mask_line6_line7] = -torch.pi/3
+
+            mask_gt_line8 = line7<xc
+            lane_position[mask_gt_line8] = -torch.sqrt(4/3-((xc[mask_gt_line8]-line7)-1)**2)+1/math.sqrt(3)+1/math.sqrt(3)
+            lane_angle[mask_gt_line8] = torch.arctan((1-(xc[mask_gt_line8]-line7))/((lane_position[mask_gt_line8]-1/math.sqrt(3.0))-1/math.sqrt(3.0)))
+
+            y_ref = lane_position
+            psi_ref = lane_angle
+            zeros = torch.zeros([len(x_coordinate)]).to(self.device)
+            state_ref = torch.cat((y_ref.unsqueeze(0), zeros.unsqueeze(0), psi_ref.unsqueeze(0), zeros.unsqueeze(0)), 0)
+            target_lv = torch.zeros_like(x_coordinate)
+            # plt.subplot(211)
+            # plt.plot(x_coordinate.cpu().numpy(),y_ref.cpu().numpy())
+            # plt.subplot(212)
+            # plt.plot(x_coordinate.cpu().numpy(),psi_ref.cpu().numpy())
+            # plt.show()
+            # input()
         if self.args.shape == 'dlc2':
             # x_coordinate = current_x + deriv_x*self.Ts
             width = 0.2 
@@ -535,14 +606,11 @@ class VehicleDynamics(DynamicsConfig):
         
         # <torch, 256>
         if need_utility:
-            _, target_lv = self.ref_traj(state[:, -1])
-            target_lv = target_lv.unsqueeze(1)
-            utility = self._utility(state, action, longitudinal_v, target_lv)
+            utility = self._utility(state, action, longitudinal_v)
+            self.former_longitudinal_v = longitudinal_v.clone().detach()
         else:
             utility = 0.
         
-        
-        self.former_longitudinal_v = longitudinal_v.clone().detach()
         # <torch, 256 * 6> <256> <256> <256> <256> <256> <256>
         return state_next, f_xu, utility
 

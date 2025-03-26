@@ -1,5 +1,5 @@
 import numpy as np
-import torch
+import torch,math
 import matplotlib.pyplot as plt
 import os
 import logging
@@ -80,7 +80,6 @@ class Train(object):
         # <torch, 256 * 2>
         self.control, self.velocity = policy.select_action(self.state_batch[:, 0:4])
         logging.debug(self.control)
-
         # 这里传入的是agent_batch而不是state_batch,状态整体到达下一个位置
         # <torch, 256 * 6>, <torch, 256 * 6>
         self.agent_batch, self.state_batch = dynamics.step_relative(self.agent_batch, self.control, self.velocity)
@@ -98,7 +97,7 @@ class Train(object):
 
         policy.actor.zero_grad()
         policy_loss.backward()
-        torch.nn.utils.clip_grad_norm_(policy.actor.parameters(), 3.0)
+        torch.nn.utils.clip_grad_norm_(policy.actor.parameters(), 1.0)
         policy.actor.optim.step()
 
         if (iter_index_out+1)%100==0:

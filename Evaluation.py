@@ -1,4 +1,4 @@
-import time
+import time,math
 
 import pandas as pd
 
@@ -109,7 +109,7 @@ def evaluation(args, policy, dynamic):
         # render(args, state)
         # todo: input of policy network must be a error state
         update_begin.append(time.time())
-        u,longitudinal_v = policy.select_action(torch.cat((state_r[:, 0:4],state_r[:,5].unsqueeze(1)),dim=1),eval=True)
+        u,longitudinal_v = policy.select_action(state_r[:, 0:4])
         if longitudinal_v.item()!=0:
             longitudinal_vs.append(longitudinal_v.item())
         # print(longitudinal_v.item())
@@ -241,6 +241,62 @@ def evaluation(args, policy, dynamic):
 
     if args.shape == 'line':
         y_ref = np.zeros(len(x))
+
+    if args.shape == 'l_dic2':
+        x_coordinate = x
+        x_coordinate = np.linspace(0,80,4000)
+        width = 0.2 
+        straight = 2.0
+        circle_straight = 1.0
+        line1 = 2.0 # 2
+        line2 = line1 + 1.0 # 3
+        line3 = line2 + 1.0
+        line4 = line3 + 1.0
+        line5 = line4 + 2.0
+        line6 = line5 + 1.0
+        line7 = line6 + 1.0
+        cycle = line7 + 1.0
+
+        xc = torch.from_numpy(x_coordinate % cycle)
+
+        lane_position = torch.zeros_like(torch.from_numpy(x_coordinate))
+        lane_angle = torch.zeros_like(torch.from_numpy(x_coordinate))
+
+        mask_le_line1 = xc<=line1
+        lane_position[mask_le_line1] = 0
+        lane_angle[mask_le_line1] = 0
+
+        mask_line1_line2 = (line1 < xc) & (xc <= line2)
+        lane_position[mask_line1_line2] = -torch.sqrt(4/3-(xc[mask_line1_line2]-line1)**2)+2/math.sqrt(3.0)
+        lane_angle[mask_line1_line2] = torch.arctan((xc[mask_line1_line2]-line1)/(2/math.sqrt(3.0)-lane_position[mask_line1_line2]))
+        
+        mask_line2_line3 = (line2 < xc) & (xc <= line3)
+        lane_position[mask_line2_line3] = (xc[mask_line2_line3]-line2)*math.sqrt(3.0)+1/math.sqrt(3.0)
+        lane_angle[mask_line2_line3] = torch.pi/3
+        
+        mask_line3_line4 = (line3 < xc) & (xc <= line4)
+        lane_position[mask_line3_line4] = torch.sqrt(4/3-((xc[mask_line3_line4]-line3)-1)**2)-1/math.sqrt(3.0)+math.sqrt(3.0)+1/math.sqrt(3.0)
+        lane_angle[mask_line3_line4] = torch.arctan(-((xc[mask_line3_line4]-line3)-1)/((lane_position[mask_line3_line4]-(math.sqrt(3.0)+1/math.sqrt(3.0)))+1/math.sqrt(3.0)))
+        
+        mask_line4_line5 = (line4<xc) & (xc<=line5)
+        lane_position[mask_line4_line5] = 2/math.sqrt(3)+math.sqrt(3)
+        lane_angle[mask_line4_line5] = 0.
+
+        mask_line5_line6 = (line5<xc) & (xc<=line6)
+        lane_position[mask_line5_line6] = 2/math.sqrt(3)+math.sqrt(3)+torch.sqrt(4/3-(xc[mask_line5_line6]-line5)**2)-2/math.sqrt(3.0)
+        lane_angle[mask_line5_line6] = torch.arctan(-(xc[mask_line5_line6]-line5)/(2/math.sqrt(3.0)+(lane_position[mask_line5_line6]-(2/math.sqrt(3)+math.sqrt(3)))))
+
+        mask_line6_line7 = (line6<xc) & (xc<=line7)
+        lane_position[mask_line6_line7] = -(xc[mask_line6_line7]-line6)*math.sqrt(3.0)+1/math.sqrt(3)+math.sqrt(3)
+        lane_angle[mask_line6_line7] = -torch.pi/3
+
+        mask_gt_line8 = line7<xc
+        lane_position[mask_gt_line8] = -torch.sqrt(4/3-((xc[mask_gt_line8]-line7)-1)**2)+1/math.sqrt(3)+1/math.sqrt(3)
+        lane_angle[mask_gt_line8] = torch.arctan((1-(xc[mask_gt_line8]-line7))/((lane_position[mask_gt_line8]-1/math.sqrt(3.0))-1/math.sqrt(3.0)))
+        y_ref = lane_position
+        print('y_ref.shape = ', y_ref.shape)
+        psi_ref = lane_angle
+
     if args.shape == 'dlc':
         x_coordinate = x
         width = 0.2
@@ -277,8 +333,13 @@ def evaluation(args, policy, dynamic):
     y = state_history[:, 0]
     tu = np.append(action_history, 0)
     psi = state_history[:, 2]
-    print(min(longitudinal_vs))
-    
+    print(lane_angle)
+    print(len(x_coordinate),len(lane_position.numpy()),len(lane_angle.numpy()))
+    plt.subplot(211)
+    plt.plot(x_coordinate,lane_position.numpy())
+    plt.subplot(212)
+    plt.plot(x_coordinate,lane_angle.numpy())
+    plt.show()
     # print('y.shape = ', y.shape)
     # plt.plot(dynamic.traj_data[:, 0], dynamic.traj_data[:, 1])
     plt.subplot(411)
@@ -308,7 +369,6 @@ def evaluation(args, policy, dynamic):
     plt.subplot(414)
     plt.ylabel("纵向速度(m/s)")
     plt.plot(x, longitudinal_vs,linewidth=1, label='纵向速度')
-    plt.plot(x, target_lv,color = 'r',linewidth=1, label='参考纵向速度')
     plt.legend(loc="upper right")
     plt.grid(True, linestyle='--', linewidth=0.5)
 
@@ -322,14 +382,6 @@ def evaluation(args, policy, dynamic):
     print('max psi error=',max(psi - psi_ref))
     plt.show()
 
-    half = int(len(x)/2)
-    plt.subplot(211)
-    plt.plot(x[:half], y_ref[:half], color='b', linestyle=':', linewidth=1, label='参考轨迹')
-    plt.legend(loc="upper right")
-    plt.subplot(212)
-    plt.plot(x[:half], target_lv[:half],color = 'r',linewidth=1, label='参考纵向速度')
-    plt.legend(loc="upper right")
-    plt.show()
 
 def step_relative(statemodel, state, u, longitudinal_v):
     x_ref, _ = statemodel.ref_traj(state[:, -1])

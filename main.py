@@ -28,14 +28,14 @@ from Evaluation import evaluation
 def built_parser():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--code_mode', default='train', help='train or evaluate')
+    parser.add_argument('--code_mode', default='evaluate', help='train or evaluate')
     parser.add_argument('--evaluate_iteration', default=8000, help='which net to use when evaluate')
     """task"""
     parser.add_argument('--state_dim', default=4, help='dimension of state')
     parser.add_argument('--action_dim', default=2, help='dimension of action')
     parser.add_argument('--dynamic_dim', default=6, help='dimension of vehicle dynamic')
     # method version3开始引入目标纵向速度，目前现在dlc2上训练
-    parser.add_argument('--method_version', default='4', help='method_version')
+    parser.add_argument('--method_version', default='5', help='method_version')
     """training"""
     parser.add_argument('--buffer_size', default=5000)
     parser.add_argument('--batch_size', default=256)
@@ -45,7 +45,7 @@ def built_parser():
     parser.add_argument('--lr_v', default=8e-4, help='learning rate of value network')
 
     """trajectory"""
-    parser.add_argument('--shape', default='dlc2', help='sin, cos, line, traj, dlc or dlc2')
+    parser.add_argument('--shape', default='dlc2', help='square,sin, cos, line, traj, dlc or dlc2')
     parser.add_argument('--a', default=0.2, help='amplifier of the sin curve')
     parser.add_argument('--k', default=1.25*np.pi, help='frequency of the sin curve')
     parser.add_argument('--y_lim', default=5, help='limitation of y when training')
@@ -91,6 +91,7 @@ def main():
     所以现在的状态量为[y,v(横向),psi,w,V(纵向),x_coordinate]
     仅修改了ref_traj函数,不需要向状态量中添加target_lv,效率很高滴
     不使用参考的纵向速度，而是希望纵向速度尽可能大(在转向角u较小时)
+    method 4未参与git，因为只是在loss中添加了
     '''
     if args.code_mode == 'train':
         train = Train(args)

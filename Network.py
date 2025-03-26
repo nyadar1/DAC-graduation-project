@@ -103,16 +103,19 @@ class DiffusionPolicy(nn.Module):
         # 时间步嵌入
         self.t_encoder = nn.Sequential(
             nn.Linear(1, 16),
-            nn.Mish(),
-            nn.Linear(16, 16)
+            nn.GELU(),
+            nn.Linear(16, 16),
+            nn.Tanh()
         )
         
         # 噪声预测网络
         self.noise_net = nn.Sequential(
             nn.Linear(state_dim + action_dim + 16, hidden_dim),
-            nn.Mish(),
+            nn.LayerNorm(hidden_dim),
+            nn.GELU(),
             nn.Linear(hidden_dim, hidden_dim),
-            nn.Mish(),
+            nn.LayerNorm(hidden_dim),
+            nn.GELU(),
             nn.Linear(hidden_dim, action_dim)
         )
         
@@ -123,7 +126,28 @@ class DiffusionPolicy(nn.Module):
         self.alpha_bar = torch.cumprod(self.alpha, 0)
         self.optim = torch.optim.Adam(self.parameters(), lr=config.lr_p)
         self._initialize_weights()
+
+        # 解耦控制头
+        self.steer_head = nn.Sequential(
+            nn.Linear(2, 32),
+            nn.LayerNorm(32),
+            nn.Tanh(),
+            nn.Linear(32, 1),
+            nn.Tanh()
+        )
         
+        self.speed_head = nn.Sequential(
+            nn.Linear(2, 32),
+            nn.LayerNorm(32),
+            nn.Sigmoid(),
+            nn.Linear(32, 1),
+            nn.Sigmoid()
+        )
+        
+        # 速度-转向耦合层
+        self.coupling_layer = nn.Linear(1, 1, bias=False)  # 学习转向对速度的影响
+
+
     def forward(self, state, action, t):
         # 时间步嵌入
         t_emb = self.t_encoder((t / self.t_steps).view(-1, 1))
@@ -133,6 +157,7 @@ class DiffusionPolicy(nn.Module):
     
     def sample(self, state, add_noise=True, alpha_param=1.0, lambda_=0.01):
         # 初始action为纯噪声
+        assert not torch.isnan(state).any(), "NaN in diffusion state in!"
         a_t = torch.randn(state.shape[0], self.config.action_dim, device=self.config.device)
         # 反向扩散过程
         for t in reversed(range(self.t_steps)):
@@ -144,26 +169,36 @@ class DiffusionPolicy(nn.Module):
             等价于定义模型model后直接model(y)
             '''
             noise_pred = self(state, a_t, t_tensor)
+
+            assert not torch.isnan(noise_pred).any(), "NaN in noise_pred!"
             alpha_t = self.alpha[t]
             alpha_bar_t = self.alpha_bar[t]
             
             # 计算均值
-            mean = (a_t - (self.beta[t]/torch.sqrt(1-alpha_bar_t))*noise_pred) / torch.sqrt(alpha_t)
+            mean = (a_t - (self.beta[t]/(torch.sqrt(1-alpha_bar_t)+1e-8))*noise_pred) / (torch.sqrt(alpha_t)+1e-8)
             # 添加噪声
             if t > 0 and add_noise:
                 noise = torch.randn_like(a_t)
                 a_t = mean + torch.sqrt(self.beta[t]) * noise
             else:
                 a_t = mean
+            
         # 最终动作添加自适应噪声
         if add_noise:
             x = torch.randn_like(a_t)
             a_t = a_t + lambda_ * alpha_param * x
         a_tt = a_t.clone()
-        a_tt[:,0] = (torch.sigmoid(a_t)[:,0]-0.5)*2
-        a_tt[:,1] = torch.sigmoid(a_t)[:,1]+0.1
+        # 生成基础控制量
+        steer = self.steer_head(a_t) * 1.0 # 1.0为max steer
+        raw_speed = self.speed_head(a_t) * 0.9 # 0.9为max speed
+        
+        # 应用耦合约束
+        steer_impact = self.coupling_layer(torch.abs(steer)/1.0)
+        coupled_speed = raw_speed * (1 - steer_impact.sigmoid())
 
-        return a_tt
+        # a_tt[:,0] = (torch.sigmoid(a_t)[:,0]-0.5)*2
+        # a_tt[:,1] = 0.8*torch.sigmoid(a_t)[:,1]+0.1
+        return torch.cat([steer, coupled_speed], dim=-1)
     
     def save_parameters(self, log_dir, iteration):
         '''
@@ -331,6 +366,7 @@ class DAC:
         f_hat = 1/(bandwidth*np.sqrt(2 * np.pi))*(sum(K)/len(K))+1e-8
         entropy = torch.log(f_hat)
         if math.isinf(entropy.mean().item()) or math.isnan(entropy.mean().item()):
-            input("f_hat corrupted",f_hat,entropy,actions)
+            print(f_hat,entropy,actions)
+            input("f_hat corrupted")
     
         return entropy
