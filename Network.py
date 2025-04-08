@@ -155,7 +155,7 @@ class DiffusionPolicy(nn.Module):
         noise = self.noise_net(torch.cat([state, action, t_emb], dim=-1))
         return noise
     
-    def sample(self, state, add_noise=True, alpha_param=1.0, lambda_=0.01):
+    def sample(self, state, add_noise=True, alpha_param=1.0, lambda_=0.01, l_v=-1):
         # 初始action为纯噪声
         assert not torch.isnan(state).any(), "NaN in diffusion state in!"
         a_t = torch.randn(state.shape[0], self.config.action_dim, device=self.config.device)
@@ -189,16 +189,21 @@ class DiffusionPolicy(nn.Module):
             a_t = a_t + lambda_ * alpha_param * x
         a_tt = a_t.clone()
         # 生成基础控制量
-        steer = self.steer_head(a_t) * 1.0 # 1.0为max steer
-        raw_speed = self.speed_head(a_t) * 0.9 # 0.9为max speed
-        
+        # steer = self.steer_head(a_t) * 1.0 # 1.0为max steer
+        # raw_speed = self.speed_head(a_t) * 0.9 # 0.9为max speed
+        steer = torch.tanh(a_tt[:,0].unsqueeze(1))*1.0
+        raw_speed = torch.sigmoid(a_tt[:,1].unsqueeze(1))*0.9
         # 应用耦合约束
-        steer_impact = self.coupling_layer(torch.abs(steer)/1.0)
-        coupled_speed = raw_speed * (1 - steer_impact.sigmoid())
-
+        # steer_impact = self.coupling_layer(torch.abs(steer)/1.0)
+        # coupled_speed = raw_speed * (1 - steer_impact.sigmoid())
+        # if l_v != -1:
+        #     filtered_v = 0.8 * coupled_speed + (1 - 0.8) * l_v
+        # else:
+        #     filtered_v = coupled_speed
+        # filtered_v
         # a_tt[:,0] = (torch.sigmoid(a_t)[:,0]-0.5)*2
         # a_tt[:,1] = 0.8*torch.sigmoid(a_t)[:,1]+0.1
-        return torch.cat([steer, coupled_speed], dim=-1)
+        return torch.cat([steer, raw_speed], dim=-1)
     
     def save_parameters(self, log_dir, iteration):
         '''
@@ -327,10 +332,11 @@ class DAC:
         self.lambda_ = config.lambda_
         # self.t_steps = config.t_steps
 
-    def select_action(self, state, eval=False,return_way = 'split'):
+    def select_action(self, state, eval=False,return_way = 'split',l_v = -1):
         action = self.actor.sample(state, add_noise=not eval, 
                                     alpha_param=self.alpha.detach().item(),
-                                    lambda_=self.lambda_)
+                                    lambda_=self.lambda_,
+                                    l_v = l_v)
         if return_way == 'split':
             return action[:,0].unsqueeze(1),action[:,1].unsqueeze(1)
         elif return_way == 'merge':

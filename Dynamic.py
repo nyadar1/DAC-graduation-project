@@ -74,6 +74,9 @@ class VehicleDynamics(DynamicsConfig):
         # [0] <torch, 256 * 6> # [y, v, psi, omega_r, u, x] # TODO ???
         self._state = torch.zeros([self.args.batch_size, self.args.dynamic_dim]).to(self.device)
         self.former_longitudinal_v = torch.zeros([self.args.batch_size, 1]).to(self.device)
+        self.former_longitudinal_v_list = [self.former_longitudinal_v]
+        self.former_former_v = torch.zeros_like(self.former_longitudinal_v)
+        self.count=0
         # [0] <torch, 256 * 6>
         self.init_state = torch.zeros([self.args.batch_size, self.args.dynamic_dim]).to(self.device)
 
@@ -436,14 +439,14 @@ class VehicleDynamics(DynamicsConfig):
         '''
         # steer ratio and penalty steer范围为(-1,1)因此ratio直接沿用control[:,0]
         steer_ratio = torch.abs(control[:,0])
-        speed_penalty = 0.005*torch.exp(-2.0*longitudinal_v[:,0])# *torch.pow(longitudinal_v[:,0],2)
-        smooth_v = 0.002*torch.pow(longitudinal_v[:,0]-self.former_longitudinal_v[:,0],2)
+        # speed_penalty = 0.5*torch.exp(-torch.abs(longitudinal_v[:,0]))# *torch.pow(longitudinal_v[:,0],2)
+        # smooth_v = 0.005*torch.pow(longitudinal_v[:,0]-self.former_longitudinal_v[:,0],2)
         # method 4仅使用speed_penalty = -0.005*torch.pow(longitudinal_v[:,0],2)作为补充
         # speed_penalty += 0.01*torch.exp(2.0*steer_ratio)*torch.pow(longitudinal_v[:,0],2)
-        max_speed = 0.9
+        # max_speed = 0.9
         # safe_speed = max_speed*torch.sqrt(1.0-steer_ratio**0.075)
-        # speed_constraint = 0.5*torch.relu(torch.pow(longitudinal_v[:,0]-safe_speed,2))
-        utility += speed_penalty + smooth_v #+speed_constraint
+        # speed_constraint = 5*torch.pow(longitudinal_v[:,0]-safe_speed,2)
+        # utility += speed_penalty #+ smooth_v
         return utility
     
     def ref_traj(self,x_coordinate):
@@ -608,8 +611,12 @@ class VehicleDynamics(DynamicsConfig):
         if need_utility:
             utility = self._utility(state, action, longitudinal_v)
             self.former_longitudinal_v = longitudinal_v.clone().detach()
+            self.former_longitudinal_v_list.append(self.former_longitudinal_v)
+                
         else:
             utility = 0.
+            self.former_longitudinal_v_list = [longitudinal_v]
+            self.count = 0
         
         # <torch, 256 * 6> <256> <256> <256> <256> <256> <256>
         return state_next, f_xu, utility

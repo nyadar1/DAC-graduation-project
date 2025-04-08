@@ -126,8 +126,9 @@ class Train(object):
                 # <torch, 256 * 6>
                 self.x_forward[i] = self.state_batch.detach()
                 logging.debug(self.x_forward[i])
-
-            self.u_forward[i],self.longitudinal_v_forward[i] = policy.select_action(self.x_forward[i][:, 0:4])
+                self.u_forward[i],self.longitudinal_v_forward[i] = policy.select_action(self.x_forward[i][:, 0:4],l_v = -1)
+            else:
+                self.u_forward[i],self.longitudinal_v_forward[i] = policy.select_action(self.x_forward[i][:, 0:4],l_v = self.longitudinal_v_forward[i-1])
 
             # <torch, 256 * 6>, <256 * 1>
             self.x_forward[i + 1], _, self.l_forward[i] = dynamic.step(self.x_forward[i], self.u_forward[i], self.longitudinal_v_forward[i],need_utility=True)
