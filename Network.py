@@ -115,8 +115,10 @@ class DiffusionPolicy(nn.Module):
         self.noise_net = nn.Sequential(
             nn.Linear(state_dim + action_dim + 16, hidden_dim),
             nn.Mish(),
+            nn.LayerNorm(hidden_dim),
             nn.Linear(hidden_dim, hidden_dim),
             nn.Mish(),
+            nn.LayerNorm(hidden_dim),
             nn.Linear(hidden_dim, action_dim)
         )
         
@@ -138,6 +140,7 @@ class DiffusionPolicy(nn.Module):
     def sample(self, state, add_noise=True, alpha_param=1.0, lambda_=0.01):
         # 初始action为纯噪声
         a_t = torch.randn(state.shape[0], self.config.action_dim, device=self.config.device)
+        assert not torch.isnan(state).any(), "NaN in diffusion state in!"
         # 反向扩散过程
         for t in reversed(range(self.t_steps)):
             # torch.full全为t，形状为(state.shape[0])的张量即shap为[256]，作为时序张量
@@ -148,11 +151,13 @@ class DiffusionPolicy(nn.Module):
             等价于定义模型model后直接model(y)
             '''
             noise_pred = self(state, a_t, t_tensor)
+            assert not torch.isnan(noise_pred).any(), "NaN in noise_pred!"
             alpha_t = self.alpha[t]
             alpha_bar_t = self.alpha_bar[t]
             
             # 计算均值
             mean = (a_t - (self.beta[t]/torch.sqrt(1-alpha_bar_t))*noise_pred) / torch.sqrt(alpha_t)
+            
             # 添加噪声
             if t > 0 and add_noise:
                 noise = torch.randn_like(a_t)
@@ -164,8 +169,8 @@ class DiffusionPolicy(nn.Module):
             x = torch.randn_like(a_t)
             a_t = a_t + lambda_ * alpha_param * x
         a_tt = a_t.clone()
-        a_tt[:,0] = (torch.sigmoid(a_t)[:,0]-0.5)*2
-        a_tt[:,1] = torch.sigmoid(a_t)[:,1]+0.1
+        a_tt[:,0] = torch.tanh(a_t)[:,0]
+        a_tt[:,1] = torch.sigmoid(a_t)[:,1]+0.05
 
         return a_tt
     
@@ -176,7 +181,7 @@ class DiffusionPolicy(nn.Module):
             log_dir <str>
             iteration <int, 1>
         '''
-        path = 'iter' + str(iteration) + '_policy_net.pth'
+        path = self.args.method_version+'_iter' + str(iteration) + '_policy_net.pth'
         torch.save(self.state_dict(), os.path.join(log_dir, path))
 
     def load_parameters(self, log_dir, iteration):
@@ -186,7 +191,7 @@ class DiffusionPolicy(nn.Module):
             log_dir <str>
             iteration <int, 1>
         '''
-        path = 'iter' + str(iteration) + '_policy_net.pth'
+        path = self.args.method_version+'_iter' + str(iteration) + '_policy_net.pth'
         self.load_state_dict(torch.load(os.path.join(log_dir, path)))
 
     def _initialize_weights(self):
@@ -264,7 +269,7 @@ class Value(nn.Module):
             log_dir <str>
             iteration <int, 1>
         '''
-        path = 'iter' + str(iteration) + '_value_net.pth'
+        path = self.args.method_version+'_iter' + str(iteration) + '_value_net.pth'
         torch.save(self.state_dict(), os.path.join(log_dir, path))
 
     def load_parameters(self, log_dir, iteration):
@@ -274,7 +279,7 @@ class Value(nn.Module):
             log_dir <str>
             iteration <int, 1>
         '''
-        path = 'iter' + str(iteration) + '_value_net.pth'
+        path = self.args.method_version+'_iter' + str(iteration) + '_value_net.pth'
         self.load_state_dict(torch.load(os.path.join(log_dir, path)))
 
 
@@ -334,7 +339,5 @@ class DAC:
              K.append(torch.exp(-(sa-a)**2/(2*bandwidth**2)))
         f_hat = 1/(bandwidth*np.sqrt(2 * np.pi))*(sum(K)/len(K))+1e-8
         entropy = torch.log(f_hat)
-        if math.isinf(entropy.mean().item()) or math.isnan(entropy.mean().item()):
-            print("f_hat corrupted",f_hat,entropy)
-    
+        assert not torch.isnan(entropy).any(), "NaN in entropy!"
         return entropy

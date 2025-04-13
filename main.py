@@ -8,6 +8,8 @@
 # ================================================================
 
 import os
+import time
+import pickle
 import torch
 import logging
 import argparse
@@ -22,12 +24,15 @@ from Evaluation import evaluation
 def built_parser():
     parser = argparse.ArgumentParser()
 
+    parser.add_argument('--code_mode', default='evaluate', help='train or evaluate')
+    parser.add_argument('--evaluate_iteration', default=10000, help='which net to use when evaluate')
+    parser.add_argument('--method_version', default='7', help='method_version')
+
     """task"""
     parser.add_argument('--state_dim', default=4, help='dimension of state')
     parser.add_argument('--action_dim', default=2, help='dimension of action')
     parser.add_argument('--dynamic_dim', default=6, help='dimension of vehicle dynamic')
 
-    parser.add_argument('--method_version', default='2', help='method_version')
     """training"""
     parser.add_argument('--buffer_size', default=5000)
     parser.add_argument('--batch_size', default=256)
@@ -37,9 +42,10 @@ def built_parser():
     parser.add_argument('--lr_v', default=8e-4, help='learning rate of value network')
 
     """trajectory"""
-    parser.add_argument('--shape', default='sin', help='sin, cos, line, traj, dlc or dlc2')
+    parser.add_argument('--shape', default='dlc2', help='sin, cos, line, traj, dlc or dlc2')
     parser.add_argument('--a', default=0.2, help='amplifier of the sin curve')
-    parser.add_argument('--k', default=1.25*np.pi, help='frequency of the sin curve')
+    # parser.add_argument('--k', default=1.25*np.pi, help='frequency of the sin curve')
+    parser.add_argument('--k', default=1.25, help='frequency of the sin curve')
     parser.add_argument('--y_lim', default=5, help='limitation of y when training')
     parser.add_argument('--psi_lim', default=1.3, help='limitation of psi when training')
 
@@ -48,8 +54,7 @@ def built_parser():
     """mode"""
     parser.add_argument('--max_iteration', default=1, help='maximum iteration of training (inner loop)')  # 20000
     parser.add_argument('--max_iteration_out', default=10000, help='maximum iteration of training (outer loop)')
-    parser.add_argument('--code_mode', default='train', help='train or evaluate')
-    parser.add_argument('--evaluate_iteration', default=10000, help='which net to use when evaluate')
+    
     parser.add_argument('--load_data', default=0, help='load pre-trained data for the buffer')
     parser.add_argument('--device', default='cuda:0', help='cuda:0 or cpu')
 
@@ -75,15 +80,15 @@ def main():
 
     dynamic = VehicleDynamics(args)
 
-    policy_log_dir = './data_without_value/policy_net/'
+    policy_log_dir = './weights/policy_net/'
     os.makedirs(policy_log_dir, exist_ok=True)  # 递归创建目录
-    value_log_dir = './data_without_value/value_net/'
+    value_log_dir = './weights/value_net/'
     os.makedirs(value_log_dir, exist_ok=True)
 
     if args.code_mode == 'train':
         train = Train(args)
         # logging.debug(train)
-
+        begin = time.time()
         if args.load_data == 1:
             value.load_parameters(value_log_dir, 10000)
             policy.actor.load_parameters(policy_log_dir, 10000)
@@ -105,15 +110,22 @@ def main():
                 t_iter_index = iter_index_out + 1
                 if t_iter_index % 100 == 0:
                     print('iteration:{:3d} | policy loss:{:.4f} | value loss:{:.4f} '.format(t_iter_index, float(policy_loss), float(value_loss)))
-                if t_iter_index % 100 == 0:
+                if t_iter_index % 1000 == 0:
+                    now = time.time()
+                    print('Using time:',int((now-begin)/60),'min')
+                    with open(os.path.join(policy_log_dir,f'{args.method_version}_DAC{t_iter_index}.pkl'),
+                                'wb') as f:
+                        pickle.dump(policy, f)
                     value.save_parameters(value_log_dir, t_iter_index)
-                    policy.actor.save_parameters(policy_log_dir, t_iter_index)
 
         train.plot_figure()
 
     elif args.code_mode == 'evaluate':
         '''tracking performance depend on the trajectory shape k_curve and longitudinal speed u'''
-        policy.actor.load_parameters(policy_log_dir, args.evaluate_iteration)
+        with open(os.path.join(policy_log_dir,f'{args.method_version}_DAC{args.evaluate_iteration}.pkl'),'rb') as f:
+            policy = pickle.load(f)
+        # policy.actor.load_parameters()
+        policy.actor.to('cuda:0')
         evaluation(args, policy, dynamic)
 
 

@@ -406,7 +406,8 @@ class VehicleDynamics(DynamicsConfig):
         # <torch, 256>
         utility = 10 * torch.pow(state[:, 0], 2) + 0.5 * torch.pow(state[:, 2], 2) + \
                   0.01 * torch.pow(control[:, 0], 2) 
-        + 0.001 * torch.pow(torch.abs(longitudinal_v[:, 0]-self.former_longitudinal_v[:, 0]), 2)
+        + 1e-5 * torch.pow(torch.abs(longitudinal_v[:, 0]-self.former_longitudinal_v[:, 0]), 2)
+        utility += 1e-10 * torch.exp(-torch.pow(longitudinal_v[:, 0], 2))
         # 这个速度差异太小了可以采用0.2-torch.abs(...)
         # <torch, 256>
         return utility
