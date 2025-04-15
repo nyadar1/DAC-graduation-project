@@ -24,9 +24,9 @@ from Evaluation import evaluation
 def built_parser():
     parser = argparse.ArgumentParser()
 
-    parser.add_argument('--code_mode', default='evaluate', help='train or evaluate')
+    parser.add_argument('--code_mode', default='train', help='train or evaluate')
     parser.add_argument('--evaluate_iteration', default=10000, help='which net to use when evaluate')
-    parser.add_argument('--method_version', default='7', help='method_version')
+    parser.add_argument('--method_version', default='12', help='method_version')
 
     """task"""
     parser.add_argument('--state_dim', default=4, help='dimension of state')
@@ -130,4 +130,5 @@ def main():
 
 
 if __name__ == '__main__':
+    # torch.autograd.set_detect_anomaly(True)
     main()

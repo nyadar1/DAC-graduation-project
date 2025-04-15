@@ -406,9 +406,13 @@ class VehicleDynamics(DynamicsConfig):
         # <torch, 256>
         utility = 10 * torch.pow(state[:, 0], 2) + 0.5 * torch.pow(state[:, 2], 2) + \
                   0.01 * torch.pow(control[:, 0], 2) 
-        + 1e-5 * torch.pow(torch.abs(longitudinal_v[:, 0]-self.former_longitudinal_v[:, 0]), 2)
-        utility += 1e-10 * torch.exp(-torch.pow(longitudinal_v[:, 0], 2))
-        # 这个速度差异太小了可以采用0.2-torch.abs(...)
+        + 5 * torch.pow(longitudinal_v[:, 0]-self.former_longitudinal_v[:, 0], 2)
+        utility += 1e-2 * torch.exp(-torch.pow(longitudinal_v[:, 0], 2))
+
+        #这样的结构导致noise pred出现nan，因此引入了coupled项
+        # max_speed = 1.05
+        # safe_speed = max_speed*torch.sqrt(1.0-torch.abs(control[:,0]/1.0)**0.075)
+        # utility += 2*torch.pow(longitudinal_v[:,0]-safe_speed,2)
         # <torch, 256>
         return utility
     # 这里step需要输入agent state，即各变量均在世界坐标系下

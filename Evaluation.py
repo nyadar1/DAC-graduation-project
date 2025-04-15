@@ -279,7 +279,7 @@ def evaluation(args, policy, dynamic):
 
     # 统计定量分析
     print('mean y error=',np.sqrt(np.sum((y - y_ref) * (y - y_ref)) / len(y)))
-    print('max y error=',max(y - y_ref))
+    print('max y error=',max(np.abs(y - y_ref)))
     psi = state_history[:, 2]
     print('mean psi error',np.sqrt(np.sum((psi - psi_ref) * (psi - psi_ref)) / len(y)))
     print('max psi error=',max(psi - psi_ref))

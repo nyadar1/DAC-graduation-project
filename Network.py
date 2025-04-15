@@ -121,6 +121,7 @@ class DiffusionPolicy(nn.Module):
             nn.LayerNorm(hidden_dim),
             nn.Linear(hidden_dim, action_dim)
         )
+        self.coupled = nn.Linear(1, 1,bias=False)
         
         # 扩散调度参数
         self.beta = torch.linspace(1e-4, 0.02, self.t_steps)# .to(self.config.device)
@@ -170,8 +171,9 @@ class DiffusionPolicy(nn.Module):
             a_t = a_t + lambda_ * alpha_param * x
         a_tt = a_t.clone()
         a_tt[:,0] = torch.tanh(a_t)[:,0]
+        
         a_tt[:,1] = torch.sigmoid(a_t)[:,1]+0.05
-
+        
         return a_tt
     
     def save_parameters(self, log_dir, iteration):
@@ -202,7 +204,8 @@ class DiffusionPolicy(nn.Module):
             if isinstance(m, nn.Linear):
                 # init weights by uniform distribution
                 torch.nn.init.xavier_uniform_(m.weight)
-                torch.nn.init.constant_(m.bias, 0.0)
+                if m.bias is not None:
+                    torch.nn.init.constant_(m.bias, 0.0)
 
 class Value(nn.Module):
     def __init__(self, input_num, output_num, args, lr=0.001):
