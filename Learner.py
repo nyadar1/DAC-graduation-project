@@ -69,17 +69,17 @@ class Train(object):
         # <torch, 256 * 5> abs trajectory  0-3.1416的linspace
         ref_trajectory = dynamics.ref_traj(self.agent_batch[:, -1])
         logging.debug(ref_trajectory)
-
         # <torch, 256 * 5> # relative states
         self.state_batch[:, 0:4] = self.agent_batch[:, 0:4] - ref_trajectory
+        self.state_batch[:, 4:] = self.agent_batch[:, 4:]
         self.state_batch.detach()
-        logging.debug(self.state_batch)
 
+        logging.debug(self.state_batch)
         # 这里传入的是state_batch, 因为policy网络的输入必须是差值才有意义
         # policy产生控制策略
         # <torch, 256 * 2>
         # self.control, self.velocity = policy.forward(self.state_batch[:, 0:4])
-        self.control, self.velocity = policy.select_action(self.state_batch[:, 0:4])
+        self.control, self.velocity = policy.select_action(self.state_batch[:, 0:4],former_V=self.agent_batch[:, 4])
         logging.debug(self.control)
 
         # 这里传入的是agent_batch而不是state_batch,状态整体到达下一个位置
@@ -103,7 +103,7 @@ class Train(object):
 
         if (iter_index_out+1)%100==0:
             with torch.no_grad():
-                self.control, self.velocity = policy.select_action(self.state_batch[:, 0:4])
+                self.control, self.velocity = policy.select_action(self.state_batch[:, 0:4],former_V=self.state_batch[:,4])
             policy.policy_entropy_update(self.state_batch_next,torch.cat([self.control, self.velocity],dim=1))
             self.alphas.append(policy.alpha.item())
 
@@ -123,8 +123,7 @@ class Train(object):
                 # <torch, 256 * 6>
                 self.x_forward[i] = self.state_batch.detach()
                 logging.debug(self.x_forward[i])
-
-            self.u_forward[i],self.longitudinal_v_forward[i] = policy.select_action(self.x_forward[i][:, 0:4])
+            self.u_forward[i],self.longitudinal_v_forward[i] = policy.select_action(self.x_forward[i][:, 0:4], former_V=self.x_forward[i][:,4])
 
             # <torch, 256 * 6>, <256 * 1>
             self.x_forward[i + 1], _, self.l_forward[i] = dynamic.step(self.x_forward[i], self.u_forward[i], self.longitudinal_v_forward[i])

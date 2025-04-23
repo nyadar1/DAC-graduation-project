@@ -108,7 +108,7 @@ def evaluation(args, policy, dynamic):
         # render(args, state)
         # todo: input of policy network must be a error state
         update_begin.append(time.time())
-        u,longitudinal_v = policy.select_action(state_r[:, 0:4],eval=True)
+        u,longitudinal_v = policy.select_action(state_r[:, 0:4],eval=True,former_V=state[:,4])
         if longitudinal_v.item()!=0:
             longitudinal_vs.append(longitudinal_v.item())
         # print(longitudinal_v.item())

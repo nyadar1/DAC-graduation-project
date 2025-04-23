@@ -121,7 +121,7 @@ class DiffusionPolicy(nn.Module):
             nn.LayerNorm(hidden_dim),
             nn.Linear(hidden_dim, action_dim)
         )
-        self.coupled = nn.Linear(1, 1,bias=False)
+        # self.coupled = nn.Linear(1, 1,bias=False)
         
         # 扩散调度参数
         self.beta = torch.linspace(1e-4, 0.02, self.t_steps)# .to(self.config.device)
@@ -138,7 +138,7 @@ class DiffusionPolicy(nn.Module):
         noise = self.noise_net(torch.cat([state, action, t_emb], dim=-1))
         return noise
     
-    def sample(self, state, add_noise=True, alpha_param=1.0, lambda_=0.01):
+    def sample(self, state, add_noise=True, alpha_param=1.0, lambda_=0.01, former_V=None):
         # 初始action为纯噪声
         a_t = torch.randn(state.shape[0], self.config.action_dim, device=self.config.device)
         assert not torch.isnan(state).any(), "NaN in diffusion state in!"
@@ -171,8 +171,18 @@ class DiffusionPolicy(nn.Module):
             a_t = a_t + lambda_ * alpha_param * x
         a_tt = a_t.clone()
         a_tt[:,0] = torch.tanh(a_t)[:,0]
-        
-        a_tt[:,1] = torch.sigmoid(a_t)[:,1]+0.05
+
+        # 处理 NaN 的 former_V
+        # former_V_safe = torch.where(
+        #     torch.isnan(former_V),
+        #     torch.tensor(0.1, device=former_V.device),  # 替换 NaN 为默认值
+        #     former_V
+        # )
+        a_tt[:,1] = torch.clamp(torch.sigmoid(a_t)[:,1]+0.05,
+                                min=torch.max(torch.tensor(0.01,device=self.config.device),former_V-0.06),
+                                max=former_V+0.06)
+        # print('att[:,1]',a_tt[:,1])
+        # a_tt[:,1] = torch.sigmoid(a_t)[:,1]+0.05
         
         return a_tt
     
@@ -287,11 +297,11 @@ class Value(nn.Module):
 
 
 # DAC算法主类
-class DAC:
+class DAC(nn.Module):
     def __init__(self, config):
-        
+        super(DAC, self).__init__()
         # 网络初始化
-        self.actor = DiffusionPolicy(config).to(config.device)
+        self.actor = DiffusionPolicy(config)#.to(config.device)
         
         # 熵参数
         self.alpha = torch.tensor(0.27, requires_grad=True, device=config.device)
@@ -304,10 +314,11 @@ class DAC:
         self.lambda_ = config.lambda_
         # self.t_steps = config.t_steps
 
-    def select_action(self, state, eval=False,return_way = 'split'):
+    def select_action(self, state, eval=False,return_way = 'split', former_V=None):
         action = self.actor.sample(state, add_noise=not eval, 
                                     alpha_param=self.alpha.detach().item(),
-                                    lambda_=self.lambda_)
+                                    lambda_=self.lambda_,
+                                    former_V=former_V)
         if return_way == 'split':
             return action[:,0].unsqueeze(1),action[:,1].unsqueeze(1)
         elif return_way == 'merge':
@@ -318,7 +329,7 @@ class DAC:
     def policy_entropy_update(self,state,control):
         states = state  # bu使用子样本估计
         with torch.no_grad():
-            multiple_actions = [self.select_action(states,return_way='merge') for _ in range(20)]
+            multiple_actions = [self.select_action(states,return_way='merge',former_V=control[:,1]) for _ in range(20)]
             # multiple_actions = [self.actor.sample(states) for _ in range(20)]
             actions = [control for _ in range(20)]
         
