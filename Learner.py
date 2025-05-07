@@ -197,6 +197,14 @@ class Train(object):
         print('len(self.alpha)',len(self.alphas))
         plt.rcParams['font.family'] = ['SimHei']
         plt.rcParams['axes.unicode_minus'] = False
+
+        plt.rcParams.update({
+            'font.size': 12,          # 全局字体大小
+            'axes.labelsize': 14,      # 坐标轴标签大小
+            'xtick.labelsize': 12,     # X轴刻度标签大小
+            'ytick.labelsize': 12,     # Y轴刻度标签大小
+            'legend.fontsize': 10      # 图例文字大小
+        })
         save_dir = os.path.join('./parameters',self.args.method_version)
         os.makedirs(save_dir,exist_ok=True)
 
@@ -205,7 +213,7 @@ class Train(object):
         plt.xlabel('迭代次数')
         plt.ylabel('$L_V$')
         # plt.show()
-        plt.savefig(os.path.join(save_dir,'value_loss.png'),dpi=300)
+        plt.savefig(os.path.join(save_dir,'value_loss.png'),dpi=300, bbox_inches='tight')
         plt.close()
 
         plt.figure()
@@ -213,7 +221,7 @@ class Train(object):
         plt.xlabel('迭代次数')
         plt.ylabel('$L_\pi$')
         # plt.show()
-        plt.savefig(os.path.join(save_dir,'policy_loss.png'),dpi=300)
+        plt.savefig(os.path.join(save_dir,'policy_loss.png'),dpi=300,bbox_inches='tight')
         plt.close()
 
         plt.figure()
@@ -221,7 +229,7 @@ class Train(object):
         plt.xlabel('迭代次数')
         plt.ylabel(r'$\alpha$')
         # plt.show()
-        plt.savefig(os.path.join(save_dir,'alphas.png'),dpi=300)
+        plt.savefig(os.path.join(save_dir,'alphas.png'),dpi=300, bbox_inches='tight')
         plt.close()
 
         args_dict = vars(self.args)

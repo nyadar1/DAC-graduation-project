@@ -252,6 +252,44 @@ class VehicleDynamics(DynamicsConfig):
             # print(state_ref)
         elif self.args.shape == 'dlc2':
             # x_coordinate = x
+            # width = 0.2
+            # straight = 1
+            # line1 = 0.5
+            # line2 = line1 + 1
+            # line3 = line2 + straight
+            # line4 = line3 + 1
+            # cycle = line4 + 0.5
+            # xc = x_coordinate % cycle
+            # lane_position = torch.zeros([len(x_coordinate), ]).to(self.device)
+            # lane_angle = torch.zeros([len(x_coordinate), ]).to(self.device)
+            # for i in range(len(x_coordinate)):
+            #     if xc[i] <= line1:
+            #         lane_position[i] = 0
+            #         lane_angle[i] = 0
+            #     elif line1 < xc[i] and xc[i] <= line2:
+            #         lane_position[i] = width * (
+            #                     1 - torch.sin((xc[i] - line1) * torch.pi / (line2 - line1) + torch.pi / 2)) / 2
+            #         lane_angle[i] = -torch.arctan(width * torch.pi / (line2 - line1) * torch.cos(
+            #             (xc[i] - line1) * torch.pi / (line2 - line1) + torch.pi / 2) / 2)
+            #     elif line2 < xc[i] and xc[i] <= line3:
+            #         lane_position[i] = width
+            #         lane_angle[i] = 0
+            #     elif line3 < xc[i] and xc[i] <= line4:
+            #         lane_position[i] = width * (
+            #                     1 - torch.sin((xc[i] - line3) * torch.pi / (line4 - line3) - torch.pi / 2)) / 2
+            #         lane_angle[i] = -torch.arctan(width * torch.pi / (line4 - line3) * torch.cos(
+            #             (xc[i] - line3) * torch.pi / (line4 - line3) - torch.pi / 2) / 2)
+            #     else:
+            #         lane_position[i] = 0.
+            #         lane_angle[i] = 0.
+
+            # y_ref = lane_position
+            # # print('y_ref.shape = ', y_ref.shape)
+            # psi_ref = lane_angle
+
+            # zeros = torch.zeros([len(x_coordinate)]).to(self.device)
+
+            # state_ref = torch.cat((y_ref.unsqueeze(0), zeros.unsqueeze(0), psi_ref.unsqueeze(0), zeros.unsqueeze(0)), 0)
             width = 0.2
             straight = 1
             line1 = 0.5
@@ -259,37 +297,44 @@ class VehicleDynamics(DynamicsConfig):
             line3 = line2 + straight
             line4 = line3 + 1
             cycle = line4 + 0.5
-            xc = x_coordinate % cycle
-            lane_position = torch.zeros([len(x_coordinate), ]).to(self.device)
-            lane_angle = torch.zeros([len(x_coordinate), ]).to(self.device)
-            for i in range(len(x_coordinate)):
-                if xc[i] <= line1:
-                    lane_position[i] = 0
-                    lane_angle[i] = 0
-                elif line1 < xc[i] and xc[i] <= line2:
-                    lane_position[i] = width * (
-                                1 - torch.sin((xc[i] - line1) * torch.pi / (line2 - line1) + torch.pi / 2)) / 2
-                    lane_angle[i] = -torch.arctan(width * torch.pi / (line2 - line1) * torch.cos(
-                        (xc[i] - line1) * torch.pi / (line2 - line1) + torch.pi / 2) / 2)
-                elif line2 < xc[i] and xc[i] <= line3:
-                    lane_position[i] = width
-                    lane_angle[i] = 0
-                elif line3 < xc[i] and xc[i] <= line4:
-                    lane_position[i] = width * (
-                                1 - torch.sin((xc[i] - line3) * torch.pi / (line4 - line3) - torch.pi / 2)) / 2
-                    lane_angle[i] = -torch.arctan(width * torch.pi / (line4 - line3) * torch.cos(
-                        (xc[i] - line3) * torch.pi / (line4 - line3) - torch.pi / 2) / 2)
-                else:
-                    lane_position[i] = 0.
-                    lane_angle[i] = 0.
 
-            y_ref = lane_position
-            # print('y_ref.shape = ', y_ref.shape)
-            psi_ref = lane_angle
+            xc = x_coordinate % cycle  # 自动支持张量并行计算
 
-            zeros = torch.zeros([len(x_coordinate)]).to(self.device)
+            # 初始化结果张量 (原始值已为零，显式赋值可省略部分分支)
+            lane_position = torch.zeros_like(xc)
+            lane_angle = torch.zeros_like(xc)
 
-            state_ref = torch.cat((y_ref.unsqueeze(0), zeros.unsqueeze(0), psi_ref.unsqueeze(0), zeros.unsqueeze(0)), 0)
+            # 生成布尔掩码标识不同区间
+            mask1 = xc <= line1
+            mask2 = (xc > line1) & (xc <= line2)
+            mask3 = (xc > line2) & (xc <= line3)
+            mask4 = (xc > line3) & (xc <= line4)
+            mask5 = xc > line4  # 显式处理余数超过line4的情况
+
+            # 分段计算逻辑
+            # 1. 直线段 (mask1/mask3/mask5)
+            lane_position[mask3] = width  # 中间直线段
+            # 其他直线段位置保持0，角度保持0 (已初始化)
+
+            # 2. 第一弯道 (mask2)
+            delta_x = xc[mask2] - line1
+            phase = delta_x * torch.pi / (line2 - line1) + torch.pi/2
+            lane_position[mask2] = width * (1 - torch.sin(phase)) / 2
+            lane_angle[mask2] = -torch.arctan( 
+                width * torch.pi / (line2 - line1) * torch.cos(phase) / 2 
+            )
+
+            # 3. 第二弯道 (mask4)
+            delta_x = xc[mask4] - line3
+            phase = delta_x * torch.pi / (line4 - line3) - torch.pi/2
+            lane_position[mask4] = width * (1 - torch.sin(phase)) / 2
+            lane_angle[mask4] = -torch.arctan(
+                width * torch.pi / (line4 - line3) * torch.cos(phase) / 2 
+            )
+
+            # 组装参考状态 (无循环版本)
+            zeros = torch.zeros_like(xc)
+            state_ref = torch.stack([lane_position, zeros, lane_angle, zeros], dim=0)
 
 
         elif self.args.shape == 'dlc':
@@ -406,9 +451,13 @@ class VehicleDynamics(DynamicsConfig):
         # <torch, 256>
         utility = 10 * torch.pow(state[:, 0], 2) + 0.5 * torch.pow(state[:, 2], 2) + \
                   0.01 * torch.pow(control[:, 0], 2) 
-        + 10 * torch.pow(longitudinal_v[:, 0]-self.former_longitudinal_v[:, 0], 2)
-        utility += 1e-5 * torch.exp(-torch.pow(longitudinal_v[:, 0], 2))
-
+        + self.args.smooth_v * torch.pow(longitudinal_v[:, 0]-self.former_longitudinal_v[:, 0], 2)
+        utility += self.args.enlarge_v * torch.exp(-torch.pow(longitudinal_v[:, 0], 2))
+        '''
+        14方法为毕设中的loss图，系数为：
+        1 * torch.pow(longitudinal_v[:, 0]-self.former_longitudinal_v[:, 0], 2)
+        utility += 1e-4 * torch.exp(-torch.pow(longitudinal_v[:, 0], 2))
+        '''
         # <torch, 256>
         return utility
     # 这里step需要输入agent state，即各变量均在世界坐标系下

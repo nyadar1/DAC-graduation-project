@@ -114,10 +114,13 @@ def evaluation(args, policy, dynamic):
         # print(longitudinal_v.item())
         # print(i,state_r[:, 0:4], u)
         state, state_r = step_relative(dynamic, state, u, longitudinal_v)
+        
         update_end.append(time.time())
 
         state_history = np.append(state_history, state.detach().cpu().numpy(), axis=0)
         action_history = np.append(action_history, u.detach().cpu().numpy()[:, 0])
+        if state[:,-1]>12:
+            break
     t2 = time.time()
     longitudinal_vs.append(longitudinal_vs[-1])
     print('average update time:', np.mean(np.array(update_end)-np.array(update_begin)))
@@ -126,6 +129,13 @@ def evaluation(args, policy, dynamic):
 
     plt.rcParams['font.family'] = ['SimHei']
     plt.rcParams['axes.unicode_minus'] = False
+    plt.rcParams.update({
+            'font.size': 12,          # 全局字体大小
+            'axes.labelsize': 14,      # 坐标轴标签大小
+            'xtick.labelsize': 12,     # X轴刻度标签大小
+            'ytick.labelsize': 12,     # Y轴刻度标签大小
+            'legend.fontsize': 10      # 图例文字大小
+        })
     plt.figure(figsize=(9, 8))
     # plt.subplot(121)
     # plt.title('Trajectory')
@@ -244,8 +254,8 @@ def evaluation(args, policy, dynamic):
     # print('y.shape = ', y.shape)
     # plt.plot(dynamic.traj_data[:, 0], dynamic.traj_data[:, 1])
     plt.subplot(411)
-    plt.ylabel("y(m)")
-    plt.plot(x, y, color='mediumblue', linewidth=1, label='控制轨迹')
+    plt.ylabel("y[m]")
+    plt.plot(x, y, linewidth=1, label='控制轨迹')
     plt.plot(x, y_ref, color='r', linestyle=':', linewidth=1, label='参考轨迹')
     plt.legend(loc="upper right")
     plt.grid(True, linestyle='--', linewidth=0.5)
@@ -253,8 +263,8 @@ def evaluation(args, policy, dynamic):
     # pd.DataFrame(y_ref, x).to_csv("./x_y_ref.csv")
 
     plt.subplot(412)
-    plt.ylabel(r"$\varphi$(rad)")
-    plt.plot(x, psi, color='mediumblue', linewidth=1, label='车辆横摆角')
+    plt.ylabel(r"$\varphi$[rad]")
+    plt.plot(x, psi, linewidth=1, label='车辆横摆角')
     plt.plot(x, psi_ref, color='r', linewidth=1, linestyle=':', label='参考轨迹角度')
     plt.legend(loc="upper right")
     plt.grid(True, linestyle='--', linewidth=0.5)
@@ -262,17 +272,17 @@ def evaluation(args, policy, dynamic):
     # pd.DataFrame(psi_ref, x).to_csv("./x_psi_ref.csv")
 
     plt.subplot(413)
-    plt.ylabel("u(rad)")
+    plt.ylabel("u[rad]")
     plt.plot(x, tu)
     plt.grid(True, linestyle='--', linewidth=0.5)
     # pd.DataFrame(tu, x).to_csv("./x_u.csv")
 
     plt.subplot(414)
-    plt.ylabel("纵向速度(m/s)")
+    plt.ylabel("V[m/s]")
     plt.plot(x, longitudinal_vs,linewidth=1, label='纵向速度')
     plt.grid(True, linestyle='--', linewidth=0.5)
 
-    plt.xlabel('$x$(m)')
+    plt.xlabel('$x$[m]')
     # plt.plot(x, psi_ref, color='r', linestyle=':', label='参考轨迹角度')
 
     # plt.legend(loc="upper right")
