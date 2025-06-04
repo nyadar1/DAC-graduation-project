@@ -1,0 +1,6 @@
+/weights/
+*.log
+/__pycache__/
+/parameters/
+
+!.gitkeep
